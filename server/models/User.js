@@ -17,6 +17,14 @@ const userSchema = new mongoose.Schema({
   medicalConditions: { type: String },
   allergies: { type: String },
   emergencyContact: { type: String },
+
+  // Nominee (caregiver/family member who also gets reminders)
+  nominee: {
+    name: { type: String },
+    email: { type: String },
+    phone: { type: String },
+    pushSubscription: { type: Object }
+  },
   
   profilePic: { type: String },
   pushSubscription: { type: Object } // Added Web Push Token

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import Layout from '../../components/Layout';
 import { useAuth } from '../../context/AuthContext';
-import { Pill, BellRing, Info, ShieldCheck, Clock, Bell, BellOff } from 'lucide-react';
+import { Pill, BellRing, Info, ShieldCheck, Clock, Bell, BellOff, UserPlus, Trash2, Copy, CheckCircle } from 'lucide-react';
 
 const Reminders = () => {
     const { user } = useAuth();
@@ -12,9 +12,17 @@ const Reminders = () => {
     const [browserReminders, setBrowserReminders] = useState(false);
     const intervalRef = useRef(null);
     const notifiedRef = useRef(new Set());
+
+    // Nominee state
+    const [nominee, setNominee] = useState(null);
+    const [showNomineeForm, setShowNomineeForm] = useState(false);
+    const [nomineeForm, setNomineeForm] = useState({ name: '', email: '', phone: '' });
+    const [nomineeSaving, setNomineeSaving] = useState(false);
+    const [nomineeLinkCopied, setNomineeLinkCopied] = useState(false);
     
     useEffect(() => {
         fetchMedications();
+        fetchNominee();
         
         // Check push subscription
         if ('serviceWorker' in navigator && 'PushManager' in window) {
@@ -39,6 +47,49 @@ const Reminders = () => {
         } finally {
             setLoading(false);
         }
+    };
+
+    const fetchNominee = async () => {
+        try {
+            const res = await axios.get('/notifications/nominee');
+            if (res.data.nominee && res.data.nominee.name) {
+                setNominee(res.data.nominee);
+            }
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
+    const saveNominee = async () => {
+        if (!nomineeForm.name || !nomineeForm.email) return;
+        setNomineeSaving(true);
+        try {
+            const res = await axios.put('/notifications/nominee', nomineeForm);
+            setNominee(res.data.nominee);
+            setShowNomineeForm(false);
+        } catch (err) {
+            alert(err.response?.data?.error || 'Failed to save nominee');
+        } finally {
+            setNomineeSaving(false);
+        }
+    };
+
+    const removeNominee = async () => {
+        if (!confirm('Remove nominee? They will no longer receive reminders.')) return;
+        try {
+            await axios.delete('/notifications/nominee');
+            setNominee(null);
+            setNomineeForm({ name: '', email: '', phone: '' });
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
+    const copyNomineeLink = () => {
+        const link = `${window.location.origin}/nominee-subscribe?patient=${encodeURIComponent(user.email)}`;
+        navigator.clipboard.writeText(link);
+        setNomineeLinkCopied(true);
+        setTimeout(() => setNomineeLinkCopied(false), 2000);
     };
 
     const enablePushNotifications = async () => {
@@ -227,6 +278,85 @@ const Reminders = () => {
                       </p>
                   )}
                </div>
+           </div>
+
+           {/* Nominee Section */}
+           <div className="mt-8 bg-white border border-slate-200 shadow-sm rounded-3xl p-8">
+              <h3 className="font-display font-bold text-xl text-slate-800 mb-2 flex items-center gap-2">
+                <UserPlus className="text-primary" /> Nominee / Caregiver Alerts
+              </h3>
+              <p className="text-slate-500 text-sm mb-6">Add a family member or caregiver who will also receive medication reminders for you.</p>
+
+              {nominee ? (
+                <div className="space-y-4">
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div>
+                      <p className="text-xs font-semibold text-emerald-600 uppercase mb-1">Active Nominee</p>
+                      <p className="font-bold text-slate-800 text-lg">{nominee.name}</p>
+                      <p className="text-slate-500 text-sm">{nominee.email}{nominee.phone ? ` • ${nominee.phone}` : ''}</p>
+                      {nominee.pushSubscription ? (
+                        <span className="inline-flex items-center gap-1 mt-2 text-xs font-bold text-emerald-700 bg-emerald-100 px-2 py-1 rounded-lg">
+                          <CheckCircle size={12} /> Push notifications active
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 mt-2 text-xs font-bold text-amber-700 bg-amber-100 px-2 py-1 rounded-lg">
+                          <Bell size={12} /> Pending — share the link below
+                        </span>
+                      )}
+                    </div>
+                    <button onClick={removeNominee} className="text-red-500 hover:text-red-700 hover:bg-red-50 p-2 rounded-xl transition" title="Remove nominee">
+                      <Trash2 size={20} />
+                    </button>
+                  </div>
+
+                  {!nominee.pushSubscription && (
+                    <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4">
+                      <p className="text-sm text-slate-600 mb-3">Share this link with <strong>{nominee.name}</strong> so they can enable push notifications on their device:</p>
+                      <div className="flex items-center gap-2">
+                        <code className="flex-1 bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-600 break-all">
+                          {`${window.location.origin}/nominee-subscribe?patient=${encodeURIComponent(user.email)}`}
+                        </code>
+                        <button onClick={copyNomineeLink} className="bg-primary text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-indigo-700 transition flex items-center gap-1 shrink-0">
+                          {nomineeLinkCopied ? <><CheckCircle size={14} /> Copied!</> : <><Copy size={14} /> Copy</>}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  <button onClick={() => { setNomineeForm({ name: nominee.name, email: nominee.email, phone: nominee.phone || '' }); setShowNomineeForm(true); }} className="text-sm text-primary hover:underline font-medium">
+                    Edit nominee details
+                  </button>
+                </div>
+              ) : !showNomineeForm ? (
+                <button onClick={() => setShowNomineeForm(true)} className="bg-primary text-white font-bold py-3 px-6 rounded-xl shadow-lg hover:bg-indigo-700 transition flex items-center gap-2">
+                  <UserPlus size={18} /> Add a Nominee
+                </button>
+              ) : null}
+
+              {showNomineeForm && (
+                <div className="mt-4 bg-slate-50 border border-slate-200 rounded-2xl p-6 space-y-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">Nominee Name *</label>
+                    <input type="text" value={nomineeForm.name} onChange={e => setNomineeForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. John Doe" className="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-primary focus:border-primary outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">Nominee Email *</label>
+                    <input type="email" value={nomineeForm.email} onChange={e => setNomineeForm(f => ({ ...f, email: e.target.value }))} placeholder="e.g. john@example.com" className="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-primary focus:border-primary outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1">Nominee Phone (optional)</label>
+                    <input type="tel" value={nomineeForm.phone} onChange={e => setNomineeForm(f => ({ ...f, phone: e.target.value }))} placeholder="e.g. +91 9876543210" className="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-primary focus:border-primary outline-none" />
+                  </div>
+                  <div className="flex gap-3 pt-2">
+                    <button onClick={saveNominee} disabled={nomineeSaving || !nomineeForm.name || !nomineeForm.email} className="bg-primary text-white font-bold py-2.5 px-6 rounded-xl hover:bg-indigo-700 transition disabled:opacity-50 disabled:cursor-not-allowed">
+                      {nomineeSaving ? 'Saving...' : 'Save Nominee'}
+                    </button>
+                    <button onClick={() => setShowNomineeForm(false)} className="bg-slate-200 text-slate-700 font-bold py-2.5 px-6 rounded-xl hover:bg-slate-300 transition">
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
            </div>
         </Layout>
     );

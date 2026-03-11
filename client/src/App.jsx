@@ -11,6 +11,7 @@ import ActiveMeds from './pages/patient/ActiveMeds';
 import MedicalHistory from './pages/patient/MedicalHistory';
 import Reminders from './pages/patient/Reminders';
 import DoctorDashboard from './pages/doctor/DoctorDashboard';
+import NomineeSubscribe from './pages/NomineeSubscribe';
 
 function App() {
   return (
@@ -20,6 +21,7 @@ function App() {
           {/* Public Routes */}
           <Route path="/" element={<Landing />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/nominee-subscribe" element={<NomineeSubscribe />} />
 
           {/* Patient Routes */}
           <Route element={<ProtectedRoute allowedRoles={['PATIENT']} />}>

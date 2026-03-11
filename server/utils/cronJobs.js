@@ -3,6 +3,22 @@ const cron = require('node-cron');
 const Medication = require('../models/Medication');
 const User = require('../models/User');
 
+// Twilio SMS setup
+let twilioClient = null;
+const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER;
+if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && TWILIO_PHONE
+    && process.env.TWILIO_ACCOUNT_SID.startsWith('AC')) {
+  try {
+    const twilio = require('twilio');
+    twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+    console.log('[SMS] Twilio configured for nominee SMS alerts');
+  } catch (err) {
+    console.log('[SMS] Twilio initialization failed:', err.message);
+  }
+} else {
+  console.log('[SMS] Twilio not configured — SMS alerts disabled. Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER in .env');
+}
+
 // VAPID keys should ideally be securely generated and put in .env. 
 // For this hackathon, we'll initialize them statically if missing.
 const vapidKeys = webpush.generateVAPIDKeys();
@@ -52,6 +68,40 @@ const initCronJobs = () => {
                  // Subscription expired/removed
                  await User.findByIdAndUpdate(patient._id, { $unset: { pushSubscription: 1 } });
                }
+            }
+         }
+
+         // Also notify nominee if configured
+         if (patient && patient.nominee && patient.nominee.pushSubscription) {
+            const nomineePayload = JSON.stringify({
+              title: 'MedTrack AI - Nominee Alert',
+              body: `Reminder: ${patient.name} needs to take ${med.name} (${med.dosage || med.instructions}) now.`,
+              url: '/patient/reminders'
+            });
+
+            try {
+               await webpush.sendNotification(patient.nominee.pushSubscription, nomineePayload);
+               console.log(`[Cron] Sent nominee notification for ${patient.name} -> ${patient.nominee.name}`);
+            } catch (error) {
+               console.error(`[Cron] Failed pushing to nominee ${patient.nominee.name}`, error);
+               if (error.statusCode === 410) {
+                 await User.findByIdAndUpdate(patient._id, { $unset: { 'nominee.pushSubscription': 1 } });
+               }
+            }
+         }
+
+         // Send SMS to nominee's phone number
+         if (patient && patient.nominee && patient.nominee.phone && twilioClient) {
+            const smsBody = `MedTrack AI Alert: ${patient.name} needs to take ${med.name} (${med.dosage || ''}) now. Please ensure they take their medication.`;
+            try {
+               await twilioClient.messages.create({
+                 body: smsBody,
+                 from: TWILIO_PHONE,
+                 to: patient.nominee.phone
+               });
+               console.log(`[SMS] Sent SMS to nominee ${patient.nominee.name} (${patient.nominee.phone})`);
+            } catch (error) {
+               console.error(`[SMS] Failed sending SMS to ${patient.nominee.phone}:`, error.message);
             }
          }
       }
