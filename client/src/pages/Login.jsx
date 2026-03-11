@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import Cookies from 'js-cookie';
 import { LogIn, ArrowLeft, Mail, Lock, User as UserIcon, HeartPulse } from 'lucide-react';
 
 const Login = () => {
@@ -26,14 +27,20 @@ const Login = () => {
     setError('');
     
     try {
+      let loggedInUser;
       if (isLogin) {
-        await login(formData.email, formData.password, role);
+        loggedInUser = await login(formData.email, formData.password, role);
       } else {
-        await signup({ ...formData, role });
+        loggedInUser = await signup({ ...formData, role });
       }
       
       // Navigate on success
-      navigate(role === 'DOCTOR' ? '/doctor/dashboard' : '/patient/dashboard');
+      if (role === 'DOCTOR') {
+        const token = Cookies.get('token');
+        window.location.href = `http://localhost:5000/doctor-panel/dashboard.html?token=${encodeURIComponent(token)}`;
+        return;
+      }
+      navigate('/patient/dashboard');
     } catch (err) {
       setError(err.response?.data?.error || 'Authentication failed');
     }

@@ -1,0 +1,21 @@
+{
+  "name": "MediDash",
+  "short_name": "MediDash",
+  "description": "Intelligent Clinical Dashboard for Healthcare Professionals",
+  "start_url": "/login.html",
+  "display": "standalone",
+  "background_color": "#f3f8f7",
+  "theme_color": "#0d8a7b",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

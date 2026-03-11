@@ -6,3 +6,6 @@ venv/
 client/node_modules
 server/node_modules
 server/uploads/*
+server/doctor-panel/medidash.db
+server/doctor-panel/medidash.db-shm
+server/doctor-panel/medidash.db-wal

@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MediDash — Clinical Decision Support</title>
+    <link rel="manifest" href="/doctor-panel/manifest.json" />
+    <meta name="theme-color" content="#0d8a7b" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Syne:wght@500;700;800&display=swap" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <!-- Toast container -->
+    <div id="toast-container" aria-live="polite"></div>
+
+    <!-- Patient detail modal -->
+    <div id="patient-modal" class="modal-overlay" hidden>
+      <div class="modal-card modal-card--wide">
+        <button class="modal-close" id="close-patient-modal">&times;</button>
+        <div id="patient-modal-body"></div>
+      </div>
+    </div>
+
+    <!-- Add Patient modal -->
+    <div id="add-patient-modal" class="modal-overlay" hidden>
+      <div class="modal-card">
+        <button class="modal-close" id="close-add-patient">&times;</button>
+        <h2 style="font:700 1.2rem 'Syne',sans-serif;margin:0 0 18px">Add New Patient</h2>
+        <form id="add-patient-form" class="add-patient-form" autocomplete="off">
+          <div class="form-row">
+            <div class="form-group"><label>Full Name *</label><input type="text" id="ap-name" required /></div>
+            <div class="form-group"><label>Age *</label><input type="number" id="ap-age" min="0" max="150" required /></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Gender</label>
+              <select id="ap-gender"><option value="">—</option><option>Male</option><option>Female</option><option>Other</option></select>
+            </div>
+            <div class="form-group">
+              <label>Blood Type</label>
+              <select id="ap-blood"><option value="">—</option><option>A+</option><option>A-</option><option>B+</option><option>B-</option><option>AB+</option><option>AB-</option><option>O+</option><option>O-</option></select>
+            </div>
+          </div>
+          <div class="form-group"><label>Primary Condition *</label><input type="text" id="ap-condition" required /></div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Status</label>
+              <select id="ap-status"><option>Stable</option><option>Review</option><option>Critical</option></select>
+            </div>
+            <div class="form-group">
+              <label>Smoking Status</label>
+              <select id="ap-smoking"><option value="">—</option><option>Never</option><option>Former</option><option>Current</option></select>
+            </div>
+          </div>
+          <div class="form-group"><label>Allergies</label><input type="text" id="ap-allergies" placeholder="Comma-separated" /></div>
+          <div class="form-group"><label>Medications</label><input type="text" id="ap-meds" placeholder="Comma-separated" /></div>
+          <div class="form-actions">
+            <button type="button" class="btn-secondary" id="cancel-add-patient">Cancel</button>
+            <button type="submit" class="btn-primary">Add Patient</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="scene-bg" aria-hidden="true"></div>
+    <div class="layout">
+      <aside class="sidebar reveal reveal-1">
+        <div class="brand">
+          <div class="brand-icon">M</div>
+          <div>
+            <p class="brand-title">MediDash</p>
+            <p class="brand-sub">Clinical Decision Support</p>
+          </div>
+        </div>
+
+        <nav class="menu">
+          <a class="menu-item active" href="#" data-section="overview">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+            Overview
+          </a>
+          <a class="menu-item" href="#" data-section="patients">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            Patients
+          </a>
+          <a class="menu-item" href="#" data-section="alerts">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            Clinical Alerts
+          </a>
+          <a class="menu-item" href="#" data-section="appointments">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            Appointments
+          </a>
+          <a class="menu-item" href="#" data-section="sources">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+            Data Sources
+          </a>
+        </nav>
+
+        <div class="sidebar-card">
+          <p class="sidebar-card-title">Today at a glance</p>
+          <p class="sidebar-card-value skeleton-text">—</p>
+          <p class="sidebar-card-meta skeleton-text">—</p>
+        </div>
+
+        <button class="btn-logout" id="btn-logout">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          Sign Out
+        </button>
+      </aside>
+
+      <main class="main">
+        <header class="topbar reveal reveal-2">
+          <div>
+            <h1 id="greeting">Dashboard</h1>
+            <p id="greeting-sub">Loading...</p>
+          </div>
+          <div class="topbar-actions">
+            <div class="search-wrap">
+              <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input type="search" placeholder="Search patients..." id="search-input" />
+              <div id="search-dropdown" class="search-dropdown" hidden></div>
+            </div>
+
+            <!-- Notification bell -->
+            <div class="notif-wrap" id="notif-wrap">
+              <button class="icon-btn" id="notif-btn" title="Clinical Alerts">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                <span class="notif-badge" id="notif-badge">0</span>
+              </button>
+              <div class="notif-dropdown" id="notif-dropdown" hidden>
+                <p class="notif-title">Clinical Alerts</p>
+                <div id="notif-list"></div>
+              </div>
+            </div>
+
+            <!-- Dark mode toggle -->
+            <button class="icon-btn" id="theme-toggle" title="Toggle dark mode">
+              <svg id="icon-sun" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+              <svg id="icon-moon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+            </button>
+
+            <button class="btn-primary" id="btn-export-pdf">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+              Export PDF
+            </button>
+          </div>
+        </header>
+
+        <!-- ══════════ OVERVIEW SECTION ══════════ -->
+        <div class="section-content" data-page="overview">
+          <section class="stats reveal reveal-3">
+            <article class="stat-card">
+              <div class="stat-icon stat-icon-patients">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+              </div>
+              <p class="label">Total Patients</p>
+              <p class="value skeleton-text" id="stat-patients">—</p>
+              <p class="trend up">Registered in system</p>
+            </article>
+            <article class="stat-card">
+              <div class="stat-icon stat-icon-monitors">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+              </div>
+              <p class="label">Active Monitors</p>
+              <p class="value skeleton-text" id="stat-monitors">—</p>
+              <p class="trend up">Wearable + EHR feeds</p>
+            </article>
+            <article class="stat-card">
+              <div class="stat-icon stat-icon-alerts">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              </div>
+              <p class="label">Critical Alerts</p>
+              <p class="value skeleton-text" id="stat-alerts">—</p>
+              <p class="trend down">Require attention</p>
+            </article>
+            <article class="stat-card">
+              <div class="stat-icon stat-icon-sources">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+              </div>
+              <p class="label">Data Sources</p>
+              <p class="value skeleton-text" id="stat-sources">—</p>
+              <p class="trend">All systems connected</p>
+            </article>
+          </section>
+
+          <section class="duo-row reveal reveal-4">
+            <article class="panel alerts-panel">
+              <div class="panel-head">
+                <h2>Clinical Alerts</h2>
+                <span class="badge badge-critical" id="alerts-count">0</span>
+              </div>
+              <div class="alerts-list" id="alerts-list">
+                <p class="empty-state">Loading alerts...</p>
+              </div>
+            </article>
+            <article class="panel schedule">
+              <div class="panel-head">
+                <h2>Today's Schedule</h2>
+              </div>
+              <div class="timeline" id="timeline">
+                <p class="empty-state">Loading schedule...</p>
+              </div>
+            </article>
+          </section>
+
+          <section class="content-grid reveal reveal-5">
+            <article class="panel table-panel table-panel--full">
+              <div class="panel-head">
+                <h2>Patients</h2>
+                <div class="source-filters">
+                  <button class="source-tag source-tag--active" data-filter="all">All</button>
+                  <button class="source-tag" data-filter="Stable">Stable</button>
+                  <button class="source-tag" data-filter="Review">Review</button>
+                  <button class="source-tag" data-filter="Critical">Critical</button>
+                </div>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Patient</th>
+                      <th>Age / Gender</th>
+                      <th>Primary Condition</th>
+                      <th>Blood Type</th>
+                      <th>Status</th>
+                      <th>Last Visit</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody id="patients-tbody"></tbody>
+                </table>
+              </div>
+            </article>
+          </section>
+
+          <section class="sources-row reveal reveal-6">
+            <article class="panel sources-panel">
+              <div class="panel-head">
+                <h2>Connected Data Sources</h2>
+              </div>
+              <div class="sources-grid" id="sources-grid"></div>
+            </article>
+          </section>
+        </div>
+
+        <!-- ══════════ PATIENTS SECTION ══════════ -->
+        <div class="section-content" data-page="patients" style="display:none">
+          <section class="patients-page reveal reveal-3">
+            <div class="patients-page-header">
+              <div class="patients-title-row">
+                <h2>Patients</h2>
+                <span class="badge badge-info" id="patients-total-badge">0</span>
+              </div>
+              <div class="patients-toolbar">
+                <div class="search-wrap patients-search-wrap">
+                  <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                  <input type="search" placeholder="Search by name or condition..." id="patients-search" />
+                </div>
+                <select class="select-sm" id="filter-condition">
+                  <option value="">All Conditions</option>
+                </select>
+                <select class="select-sm" id="filter-status">
+                  <option value="">All Statuses</option>
+                  <option value="Stable">Stable</option>
+                  <option value="Review">Review</option>
+                  <option value="Critical">Critical</option>
+                </select>
+                <select class="select-sm" id="filter-risk">
+                  <option value="">All Risk Levels</option>
+                  <option value="High">High</option>
+                  <option value="Medium">Medium</option>
+                  <option value="Low">Low</option>
+                </select>
+                <select class="select-sm" id="sort-patients">
+                  <option value="name">Sort: Name</option>
+                  <option value="last_visit">Sort: Last Visit</option>
+                  <option value="risk">Sort: Risk Level</option>
+                  <option value="condition">Sort: Condition</option>
+                </select>
+                <button class="btn-primary" id="btn-add-patient">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                  Add Patient
+                </button>
+              </div>
+            </div>
+
+            <!-- Filter tabs -->
+            <div class="patients-filter-tabs">
+              <button class="patients-tab patients-tab--active" data-ptab="all">All Patients</button>
+              <button class="patients-tab" data-ptab="high-risk">High Risk</button>
+              <button class="patients-tab" data-ptab="active-monitors">Active Monitors</button>
+              <button class="patients-tab" data-ptab="critical-alerts">Critical Alerts</button>
+            </div>
+
+            <!-- Patient cards grid -->
+            <div class="patients-grid" id="patients-grid">
+              <p class="empty-state">Loading patients...</p>
+            </div>
+          </section>
+        </div>
+
+        <!-- ══════════ ALERTS SECTION ══════════ -->
+        <div class="section-content" data-page="alerts" style="display:none">
+          <section class="reveal reveal-3">
+            <article class="panel">
+              <div class="panel-head">
+                <h2>All Clinical Alerts</h2>
+                <span class="badge badge-critical" id="alerts-page-count">0</span>
+              </div>
+              <div class="alerts-list" id="alerts-page-list">
+                <p class="empty-state">Loading alerts...</p>
+              </div>
+            </article>
+          </section>
+        </div>
+
+        <!-- ══════════ APPOINTMENTS SECTION ══════════ -->
+        <div class="section-content" data-page="appointments" style="display:none">
+          <section class="reveal reveal-3">
+            <article class="panel">
+              <div class="panel-head">
+                <h2>Appointments</h2>
+              </div>
+              <div class="timeline" id="appointments-page-list">
+                <p class="empty-state">Loading appointments...</p>
+              </div>
+            </article>
+          </section>
+        </div>
+
+        <!-- ══════════ SOURCES SECTION ══════════ -->
+        <div class="section-content" data-page="sources" style="display:none">
+          <section class="reveal reveal-3">
+            <article class="panel sources-panel">
+              <div class="panel-head">
+                <h2>Connected Data Sources</h2>
+              </div>
+              <div class="sources-grid" id="sources-page-grid"></div>
+            </article>
+          </section>
+
+          <!-- Source detail panels -->
+          <section class="source-detail-section reveal reveal-4" id="source-detail-section" style="display:none">
+            <article class="panel">
+              <div class="panel-head">
+                <h2 id="source-detail-title">Records</h2>
+                <div style="display:flex;gap:8px;align-items:center">
+                  <span class="badge badge-info" id="source-detail-count">0</span>
+                  <button class="btn-primary btn-sm" id="btn-add-record">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    Add Record
+                  </button>
+                </div>
+              </div>
+              <div id="source-detail-body"></div>
+            </article>
+          </section>
+
+          <!-- Add Record Modal -->
+          <div id="add-record-modal" class="modal-overlay" hidden>
+            <div class="modal-card">
+              <button class="modal-close" id="close-add-record">&times;</button>
+              <h2 id="add-record-title" style="font:700 1.2rem 'Syne',sans-serif;margin:0 0 18px">Add Record</h2>
+              <form id="add-record-form" class="add-patient-form" autocomplete="off">
+                <div class="form-group">
+                  <label>Patient *</label>
+                  <select id="ar-patient" required><option value="">Select patient...</option></select>
+                </div>
+                <div id="ar-fields"></div>
+                <div class="form-actions">
+                  <button type="button" class="btn-secondary" id="cancel-add-record">Cancel</button>
+                  <button type="submit" class="btn-primary">Save Record</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <script src="script.js"></script>
+  </body>
+</html>

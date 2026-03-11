@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import Layout from '../../components/Layout';
-import { UserPlus, CheckCircle, XCircle } from 'lucide-react';
+import { UserPlus, CheckCircle, XCircle, ExternalLink } from 'lucide-react';
 
 const DoctorDashboard = () => {
   const { user } = useAuth();
@@ -33,10 +33,34 @@ const DoctorDashboard = () => {
     }
   };
 
+  const openClinicalDashboard = () => {
+    window.open('http://localhost:5000/doctor-panel/login.html', '_blank');
+  };
+
   return (
     <Layout title={`Dr. ${user?.name}`} subtitle="Manage your patients and review pending connections.">
       
       <div className="grid grid-cols-1 gap-6">
+
+        {/* Clinical Dashboard Access Card */}
+        <div className="bg-gradient-to-br from-teal-500 to-emerald-600 rounded-3xl p-8 text-white shadow-lg relative overflow-hidden">
+          <div className="absolute top-[-20%] right-[-10%] w-64 h-64 bg-white/10 blur-3xl rounded-full"></div>
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div>
+              <h2 className="text-2xl font-display font-bold mb-2">Clinical Decision Support Dashboard</h2>
+              <p className="text-teal-50 font-medium">Access full patient data, vitals, lab results, imaging, wearable trends, clinical alerts, and appointments — all in one unified view.</p>
+            </div>
+            <button onClick={openClinicalDashboard} className="bg-white text-teal-700 font-bold py-3 px-6 rounded-xl shadow-lg hover:bg-slate-50 transition flex items-center gap-2 shrink-0">
+              <ExternalLink size={18} /> Open MediDash
+            </button>
+          </div>
+          <div className="flex gap-4 mt-4 text-teal-100 text-sm font-medium">
+            <span>📋 10 Patients</span>
+            <span>🔬 Lab & Imaging</span>
+            <span>⌚ Wearable Data</span>
+            <span>🚨 Clinical Alerts</span>
+          </div>
+        </div>
         
         <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm">
           <div className="flex items-center gap-3 mb-6">

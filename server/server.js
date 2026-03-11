@@ -2,6 +2,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const dotenv = require('dotenv');
+const path = require('path');
 
 dotenv.config();
 
@@ -17,6 +18,13 @@ app.use('/api/prescriptions', require('./routes/prescriptions'));
 app.use('/api/doctors', require('./routes/doctors'));
 app.use('/api/medications', require('./routes/medications'));
 app.use('/api/notifications', require('./routes/notifications'));
+
+// Doctor Clinical Dashboard (MediDash) — API + static frontend
+app.use('/api/doctor-panel', require('./routes/doctor-panel'));
+app.use('/doctor-panel', express.static(path.join(__dirname, '..', 'doctor')));
+app.get('/doctor-panel/signin', (_req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'doctor', 'login.html'));
+});
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'MedTrack AI Server is running' });
