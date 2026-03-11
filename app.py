@@ -15,6 +15,9 @@ import base64
 import json
 from flask import Flask, render_template, request, jsonify
 from groq import Groq
+from pymongo import MongoClient
+import datetime
+import certifi
 
 # ──────────────────────────────────────────────
 # CONFIGURATION
@@ -22,6 +25,9 @@ from groq import Groq
 
 # 🔑 Paste your Groq API key here
 GROQ_API_KEY = "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"
+
+# 🔑 MongoDB Connection String
+MONGO_URI = "mongodb+srv://yadumithra1_db_user:yadumithra210@cluster0.thg6tib.mongodb.net/?appName=Cluster0"
 
 # Allowed image types for upload validation
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "webp", "gif"}
@@ -39,6 +45,11 @@ app.config["MAX_CONTENT_LENGTH"] = MAX_CONTENT_LENGTH
 
 # Initialize the Groq client with API key
 client = Groq(api_key=GROQ_API_KEY)
+
+# Initialize MongoDB client
+mongo_client = MongoClient(MONGO_URI, tlsCAFile=certifi.where())
+db = mongo_client["mediscribe"]
+prescriptions_collection = db["prescriptions"]
 
 # Vision-capable model on Groq
 MODEL_NAME = "meta-llama/llama-4-scout-17b-16e-instruct"
@@ -224,12 +235,47 @@ def analyze():
 
         # ── Step 5: Call Groq Vision API ──
         result = call_groq_vision(image_data_url)
+        
+        # ── Step 5.5: Save to MongoDB ──
+        # Add a timestamp so we know when it was uploaded
+        prescription_doc = {
+            "uploaded_at": datetime.datetime.utcnow(),
+            "extracted_data": result
+        }
+        inserted_id = prescriptions_collection.insert_one(prescription_doc).inserted_id
+        
+        # Add the string representation of the inserted ID to the result
+        result["_id"] = str(inserted_id)
+
     except Exception as err:
         # Return a clean API error to the frontend instead of a traceback page.
         return jsonify({"success": False, "error": f"Analysis failed: {err}"}), 500
 
     # ── Step 6: Return success response ──
     return jsonify({"success": True, "data": result})
+
+
+@app.route("/api/prescriptions", methods=["GET"])
+def get_prescriptions():
+    """
+    GET /api/prescriptions — Fetch all historical prescriptions.
+    Returns:
+        JSON response with the list of prescriptions.
+    """
+    try:
+        # Fetch all prescriptions
+        cursor = prescriptions_collection.find().sort("uploaded_at", -1)
+        
+        prescriptions = []
+        for doc in cursor:
+            # Convert ObjectId and datetime to string for JSON serialization
+            doc["_id"] = str(doc["_id"])
+            doc["uploaded_at"] = doc["uploaded_at"].isoformat()
+            prescriptions.append(doc)
+            
+        return jsonify({"success": True, "data": prescriptions})
+    except Exception as err:
+        return jsonify({"success": False, "error": f"Failed to fetch prescriptions: {err}"}), 500
 
 
 # ──────────────────────────────────────────────

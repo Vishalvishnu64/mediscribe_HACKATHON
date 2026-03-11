@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Doctor Dashboard | MediScribe</title>
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+    <!-- Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/remixicon@3.5.0/fonts/remixicon.css" rel="stylesheet">
+    <!-- Styles -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="scene-bg"></div>
+    
+    <div class="layout">
+        <!-- Sidebar -->
+        <aside class="sidebar reveal reveal-1">
+            <div class="brand">
+                <div class="brand-icon">
+                    <i class="ri-pulse-line"></i>
+                </div>
+                <div>
+                    <h2 class="brand-title">MediScribe</h2>
+                    <p class="brand-sub">Doctor Portal</p>
+                </div>
+            </div>
+
+            <nav class="menu">
+                <a href="#" class="menu-item active">
+                    <i class="ri-dashboard-line"></i> Dashboard
+                </a>
+                <a href="#" class="menu-item">
+                    <i class="ri-file-list-3-line"></i> Prescriptions
+                </a>
+                <a href="#" class="menu-item">
+                    <i class="ri-group-line"></i> Patients
+                </a>
+                <a href="#" class="menu-item">
+                    <i class="ri-calendar-check-line"></i> Appointments
+                </a>
+                <a href="#" class="menu-item">
+                    <i class="ri-settings-4-line"></i> Settings
+                </a>
+            </nav>
+
+            <div class="sidebar-card">
+                <p class="sidebar-card-title">Pending Reviews</p>
+                <p class="sidebar-card-value" id="pending-count">0</p>
+                <p class="sidebar-card-meta">Needs attention</p>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main">
+            <!-- Topbar -->
+            <header class="topbar reveal reveal-2">
+                <div>
+                    <h1>Welcome back, Dr. Smith</h1>
+                    <p>Here's what is happening with your patients today.</p>
+                </div>
+                <div class="topbar-actions">
+                    <div class="search-box">
+                        <i class="ri-search-line" style="position:absolute; margin:12px; color:var(--muted)"></i>
+                        <input type="search" placeholder="Search patients or Rx..." style="padding-left: 36px;">
+                    </div>
+                    <button id="refresh-btn"><i class="ri-refresh-line"></i> <span style="margin-left:5px">Refresh</span></button>
+                    <button style="background: var(--surface-strong); color: var(--text); border: 1px solid var(--line);">
+                        <i class="ri-notification-3-line"></i>
+                    </button>
+                </div>
+            </header>
+
+            <!-- Stats -->
+            <div class="stats reveal reveal-3">
+                <div class="stat-card">
+                    <p class="label">Total Prescriptions</p>
+                    <p class="value" id="stat-total">0</p>
+                    <p class="trend up"><i class="ri-arrow-up-line"></i> +12% this week</p>
+                </div>
+                <div class="stat-card">
+                    <p class="label">Patients Monitored</p>
+                    <p class="value" id="stat-patients">0</p>
+                    <p class="trend up"><i class="ri-arrow-up-line"></i> +4 new</p>
+                </div>
+                <div class="stat-card">
+                    <p class="label">Adherence Rate</p>
+                    <p class="value">84%</p>
+                    <p class="trend up"><i class="ri-arrow-up-line"></i> +2.1%</p>
+                </div>
+                <div class="stat-card">
+                    <p class="label">Alerts</p>
+                    <p class="value" style="color: var(--alert);">3</p>
+                    <p class="trend down"><i class="ri-arrow-down-line"></i> Needs review</p>
+                </div>
+            </div>
+
+            <div class="content-grid">
+                <!-- Recent Prescriptions Timeline -->
+                <section class="panel reveal reveal-4">
+                    <div class="panel-head">
+                        <h2>Recent Prescriptions</h2>
+                        <a href="#">View All</a>
+                    </div>
+                    <div class="timeline" id="recent-prescriptions">
+                        <!-- Populated by JS -->
+                        <div class="slot" style="text-align:center; padding: 2rem; color: var(--muted); display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%;">
+                            <i class="ri-loader-4-line ri-spin" style="font-size: 2rem;"></i>
+                            <p style="margin-top: 10px;">Loading recent prescriptions...</p>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Insights Activity -->
+                <section class="panel reveal reveal-5">
+                    <div class="panel-head">
+                        <h2>Activity Insights</h2>
+                        <i class="ri-bar-chart-box-line" style="color: var(--muted); font-size: 1.2rem;"></i>
+                    </div>
+                    <div class="insights">
+                        <div class="ring-wrap">
+                            <div class="ring" style="--p: 84;">
+                                <span>84%</span>
+                            </div>
+                            <div class="ring-meta">
+                                <h3 class="ring-title">Overall Adherence</h3>
+                                <p>Patient medication compliance</p>
+                            </div>
+                        </div>
+                        
+                        <div style="margin-top: 10px;">
+                            <p style="margin-bottom: 8px; font-weight: 600; font-size: 0.9rem; color: var(--muted);">Prescriptions by Day</p>
+                            <div class="bars">
+                                <div class="bar"><span style="--h: 40%"></span></div>
+                                <div class="bar"><span style="--h: 60%"></span></div>
+                                <div class="bar"><span style="--h: 30%"></span></div>
+                                <div class="bar"><span style="--h: 80%"></span></div>
+                                <div class="bar"><span style="--h: 50%"></span></div>
+                                <div class="bar"><span style="--h: 90%"></span></div>
+                                <div class="bar"><span style="--h: 70%"></span></div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+                
+                <!-- Expanded Patient Table -->
+                <section class="panel table-panel reveal reveal-6">
+                    <div class="panel-head">
+                        <h2>Patient Directory</h2>
+                        <div class="actions">
+                            <button style="padding: 6px 12px; font-size: 0.85rem; background: #fff; color: var(--text); border: 1px solid var(--line);"><i class="ri-filter-3-line"></i> Filter</button>
+                        </div>
+                    </div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Patient Name</th>
+                                    <th>Age/Gender</th>
+                                    <th>Latest Prescription Date</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="patient-directory">
+                                <!-- Populated by JS -->
+                                <tr>
+                                    <td colspan="5" style="text-align:center; padding: 2rem; color: var(--muted);">
+                                        Loading directory...
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
