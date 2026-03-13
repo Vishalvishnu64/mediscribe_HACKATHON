@@ -7,6 +7,8 @@ import {
   FileText, 
   Users, 
   CalendarCheck, 
+  Bell,
+  Database,
   Settings,
   Pill,
   Clock,
@@ -30,7 +32,9 @@ const Sidebar = () => {
   const doctorLinks = [
     { to: '/doctor/dashboard', label: 'Dashboard', icon: <LayoutDashboard size={20} /> },
     { to: '/doctor/patients', label: 'My Patients', icon: <Users size={20} /> },
-    { to: '/doctor/prescriptions', label: 'Prescriptions', icon: <FileText size={20} /> },
+    { to: '/doctor/alerts', label: 'Alerts', icon: <Bell size={20} /> },
+    { to: '/doctor/appointments', label: 'Appointments', icon: <CalendarCheck size={20} /> },
+    { to: '/doctor/data-hub', label: 'Data Hub', icon: <Database size={20} /> },
     { to: '/doctor/settings', label: 'Settings', icon: <Settings size={20} /> },
   ];
 

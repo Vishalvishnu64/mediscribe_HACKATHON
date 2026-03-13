@@ -1738,3 +1738,139 @@ td, th { border-bottom-color: var(--table-border); }
     overflow-x: auto;
   }
 }
+
+/* ===== Doctor Portal: Patient-Style Redesign Override ===== */
+:root {
+  --bg: #f8fafc;
+  --surface: rgba(255, 255, 255, 0.96);
+  --surface-strong: #ffffff;
+  --text: #1e293b;
+  --muted: #64748b;
+  --primary: #2563eb;
+  --primary-light: #eff6ff;
+  --primary-dark: #1d4ed8;
+  --line: #e2e8f0;
+  --shadow: 0 22px 42px rgba(14, 67, 77, 0.05);
+}
+
+body {
+  background:
+    radial-gradient(circle at 12% 70%, rgba(37, 99, 235, 0.08) 0%, transparent 35%),
+    radial-gradient(circle at 88% 12%, rgba(16, 185, 129, 0.08) 0%, transparent 38%),
+    #f8fafc;
+}
+
+.layout {
+  grid-template-columns: 280px 1fr;
+  gap: 24px;
+  padding: 24px;
+}
+
+.sidebar {
+  border-radius: 28px;
+  padding: 24px;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 22px 42px rgba(14, 67, 77, 0.05);
+}
+
+.brand-icon {
+  border-radius: 12px;
+  background: linear-gradient(145deg, #3b82f6, #2563eb);
+}
+
+.menu-item {
+  border-radius: 16px;
+  padding: 12px 14px;
+  font-weight: 600;
+  color: #475569;
+}
+
+.menu-item:hover,
+.menu-item.active {
+  background: #eff6ff;
+  color: #1d4ed8;
+  transform: translateX(3px);
+}
+
+.sidebar-card {
+  border-radius: 18px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+
+.btn-logout {
+  border-radius: 14px;
+  background: #fef2f2;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+}
+
+.btn-logout:hover {
+  background: #fee2e2;
+}
+
+.topbar {
+  border-radius: 28px;
+  padding: 20px 24px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 22px 42px rgba(14, 67, 77, 0.05);
+}
+
+.panel,
+.stat-card {
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 12px 24px rgba(14, 67, 77, 0.04);
+}
+
+.search-wrap input,
+input[type="search"] {
+  border-radius: 14px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #334155;
+}
+
+.search-wrap input:focus,
+input[type="search"]:focus {
+  border-color: #3b82f6;
+  background: #ffffff;
+  outline: none;
+}
+
+.search-dropdown {
+  border-radius: 16px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
+}
+
+.search-dropdown .search-item {
+  padding: 10px 12px;
+}
+
+.search-dropdown .search-item:hover {
+  background: #f8fafc;
+}
+
+.icon-btn {
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+}
+
+.btn-primary {
+  border-radius: 12px;
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: #ffffff;
+}
+
+.source-tag--active,
+.source-tag--active:hover {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border-color: #bfdbfe;
+}

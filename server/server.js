@@ -25,11 +25,10 @@ app.use('/api/medications', require('./routes/medications'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Doctor Clinical Dashboard (MediDash) — API + static frontend
+// Doctor Panel API (React frontend consumes these endpoints)
 app.use('/api/doctor-panel', require('./routes/doctor-panel'));
-app.use('/doctor-panel', express.static(path.join(__dirname, '..', 'doctor')));
-app.get('/doctor-panel/signin', (_req, res) => {
-  res.sendFile(path.join(__dirname, '..', 'doctor', 'login.html'));
+app.use('/doctor-panel', (_req, res) => {
+  res.redirect('http://localhost:5173/login?role=DOCTOR');
 });
 
 app.get('/api/health', (req, res) => {

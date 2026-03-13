@@ -1,6 +1,6 @@
 /* =============================================================
-   MediDash — Clinical Decision-Support Dashboard Script
-   ============================================================= */
+  MediScribe — Doctor Portal Dashboard Script
+  ============================================================= */
 
 // API base path (merged into MedTrack server)
 const API_BASE = '/api/doctor-panel';
@@ -235,7 +235,7 @@ function setGreeting() {
   else greeting = 'Good Evening';
 
   document.getElementById('greeting').textContent = `${greeting}, ${doctor}`;
-  document.getElementById('greeting-sub').textContent = 'Clinical decision support — unified patient data view.';
+  document.getElementById('greeting-sub').textContent = 'Quick overview of your patient panel and today\'s priorities.';
 }
 
 // ========== STATS ==========
@@ -257,7 +257,7 @@ function setStatValue(id, value) {
   }
 }
 
-// ========== CLINICAL ALERTS ==========
+// ========== PATIENT ALERTS ==========
 async function loadAlerts() {
   const alerts = await api('/api/alerts');
   const container = document.getElementById('alerts-list');
@@ -268,7 +268,7 @@ async function loadAlerts() {
   countBadge.className = 'badge ' + (alerts.some(a => a.severity === 'critical') ? 'badge-critical' : 'badge-warning');
 
   if (!alerts.length) {
-    container.innerHTML = '<p class="empty-state">No active alerts</p>';
+    container.innerHTML = '<p class="empty-state">No active patient alerts</p>';
     return;
   }
 
@@ -535,7 +535,7 @@ async function loadAlertsPage() {
   if (!list) return;
   count.textContent = alerts.length;
   count.className = 'badge ' + (alerts.some(a => a.severity === 'critical') ? 'badge-critical' : 'badge-warning');
-  if (!alerts.length) { list.innerHTML = '<p class="empty-state">No active alerts</p>'; return; }
+  if (!alerts.length) { list.innerHTML = '<p class="empty-state">No active patient alerts</p>'; return; }
   list.innerHTML = '';
   alerts.forEach(a => {
     const item = document.createElement('div');
@@ -848,9 +848,9 @@ async function loadGlance() {
   if (!card) return;
   const valEl = card.querySelector('.sidebar-card-value');
   const metaEl = card.querySelector('.sidebar-card-meta');
-  valEl.textContent = g.today_patients + ' Patients Today';
+  valEl.textContent = g.today_patients + ' patients today';
   valEl.classList.remove('skeleton-text');
-  metaEl.textContent = g.critical_alerts + ' critical alerts active';
+  metaEl.textContent = g.critical_alerts + ' critical alerts need review';
   metaEl.classList.remove('skeleton-text');
 }
 
@@ -894,7 +894,7 @@ async function loadNotifications() {
   badge.style.display = critical.length ? 'grid' : 'none';
 
   if (!alerts.length) {
-    list.innerHTML = '<div class="notif-item">No active alerts</div>';
+    list.innerHTML = '<div class="notif-item">No active patient alerts</div>';
     return;
   }
 

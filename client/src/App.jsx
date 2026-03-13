@@ -14,6 +14,12 @@ import Settings from './pages/patient/Settings';
 import DoctorsDirectory from './pages/patient/DoctorsDirectory';
 import DoctorProfile from './pages/patient/DoctorProfile';
 import DoctorDashboard from './pages/doctor/DoctorDashboard';
+import DoctorPatients from './pages/doctor/DoctorPatients';
+import DoctorPatientProfile from './pages/doctor/DoctorPatientProfile';
+import DoctorAlerts from './pages/doctor/DoctorAlerts';
+import DoctorAppointments from './pages/doctor/DoctorAppointments';
+import DoctorDataHub from './pages/doctor/DoctorDataHub';
+import DoctorSettings from './pages/doctor/DoctorSettings';
 import NomineeSubscribe from './pages/NomineeSubscribe';
 
 function App() {
@@ -41,6 +47,12 @@ function App() {
           {/* Doctor Routes */}
           <Route element={<ProtectedRoute allowedRoles={['DOCTOR']} />}>
             <Route path="/doctor/dashboard" element={<DoctorDashboard />} />
+            <Route path="/doctor/patients" element={<DoctorPatients />} />
+            <Route path="/doctor/patients/:patientId" element={<DoctorPatientProfile />} />
+            <Route path="/doctor/alerts" element={<DoctorAlerts />} />
+            <Route path="/doctor/appointments" element={<DoctorAppointments />} />
+            <Route path="/doctor/data-hub" element={<DoctorDataHub />} />
+            <Route path="/doctor/settings" element={<DoctorSettings />} />
           </Route>
         </Routes>
       </BrowserRouter>

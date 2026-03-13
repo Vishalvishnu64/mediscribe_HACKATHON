@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import Cookies from 'js-cookie';
 import { LogIn, ArrowLeft, Mail, Lock, User as UserIcon, HeartPulse } from 'lucide-react';
 
 const Login = () => {
@@ -36,8 +35,7 @@ const Login = () => {
       
       // Navigate on success
       if (role === 'DOCTOR') {
-        const token = Cookies.get('token');
-        window.location.href = `http://localhost:5000/doctor-panel/dashboard.html?token=${encodeURIComponent(token)}`;
+        navigate('/doctor/dashboard');
         return;
       }
       navigate('/patient/dashboard');

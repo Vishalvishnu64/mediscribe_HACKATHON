@@ -13,6 +13,7 @@ const Topbar = ({ title, subtitle }) => {
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const isPatient = user?.role === 'PATIENT';
+  const isDoctor = user?.role === 'DOCTOR';
 
   useEffect(() => {
     const loadNotifications = async () => {
@@ -53,27 +54,33 @@ const Topbar = ({ title, subtitle }) => {
 
   useEffect(() => {
     const q = searchText.trim();
-    if (!isPatient || q.length < 2) {
+    if ((!isPatient && !isDoctor) || q.length < 2) {
       setSearchResults([]);
       return;
     }
 
     const timer = setTimeout(async () => {
       try {
-        const res = await axios.get('/doctors/list', { params: { q } });
+        const res = isPatient
+          ? await axios.get('/doctors/list', { params: { q } })
+          : await axios.get('/doctor-panel/patients', { params: { q } });
         setSearchResults(res.data || []);
       } catch (err) {
-        console.error('Doctor search failed', err);
+        console.error('Search failed', err);
       }
     }, 250);
 
     return () => clearTimeout(timer);
-  }, [searchText, isPatient]);
+  }, [searchText, isPatient, isDoctor]);
 
   const runSearch = () => {
-    if (!isPatient) return;
+    if (!isPatient && !isDoctor) return;
     const q = searchText.trim();
-    navigate(q ? `/patient/doctors?q=${encodeURIComponent(q)}` : '/patient/doctors');
+    if (isPatient) {
+      navigate(q ? `/patient/doctors?q=${encodeURIComponent(q)}` : '/patient/doctors');
+    } else {
+      navigate('/doctor/patients');
+    }
     setShowSearchResults(false);
   };
 
@@ -100,11 +107,11 @@ const Topbar = ({ title, subtitle }) => {
               if (e.key === 'Enter') runSearch();
             }}
             onFocus={() => setShowSearchResults(true)}
-            placeholder={isPatient ? 'Search doctors by name, hospital, specialization...' : 'Search...'} 
+            placeholder={isPatient ? 'Search doctors by name, hospital, specialization...' : isDoctor ? 'Search patients by name or condition...' : 'Search...'} 
             className="bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-2.5 outline-none focus:border-primary focus:bg-white transition-colors w-64 text-sm font-medium"
           />
 
-          {isPatient && showSearchResults && searchText.trim().length >= 2 && (
+          {(isPatient || isDoctor) && showSearchResults && searchText.trim().length >= 2 && (
             <div className="absolute top-[46px] left-0 right-0 bg-white border border-slate-200 rounded-xl shadow-lg z-50 p-2 max-h-72 overflow-auto">
               {searchResults.length === 0 ? (
                 <button
@@ -112,7 +119,9 @@ const Topbar = ({ title, subtitle }) => {
                   onClick={runSearch}
                   className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 text-sm text-slate-600"
                 >
-                  No direct match. View full doctor list for “{searchText.trim()}”
+                  {isPatient
+                    ? `No direct match. View full doctor list for “${searchText.trim()}”`
+                    : `No direct match. Open patient list for “${searchText.trim()}”`}
                 </button>
               ) : (
                 searchResults.slice(0, 6).map((doc) => (
@@ -120,13 +129,14 @@ const Topbar = ({ title, subtitle }) => {
                     key={doc._id}
                     type="button"
                     onClick={() => {
-                      navigate(`/patient/doctors/${doc._id}`);
+                      if (isPatient) navigate(`/patient/doctors/${doc._id}`);
+                      else navigate(`/doctor/patients/${doc.id || doc._id}`);
                       setShowSearchResults(false);
                     }}
                     className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50"
                   >
-                    <p className="text-sm font-semibold text-slate-700 truncate">Dr. {doc.name}</p>
-                    <p className="text-xs text-slate-500 truncate">{doc.specialization || 'General'} • {doc.hospital || 'Hospital not set'}</p>
+                    <p className="text-sm font-semibold text-slate-700 truncate">{isPatient ? `Dr. ${doc.name}` : doc.name}</p>
+                    <p className="text-xs text-slate-500 truncate">{isPatient ? `${doc.specialization || 'General'} • ${doc.hospital || 'Hospital not set'}` : `${doc.primary_condition || 'No condition'} • ${doc.status || '—'}`}</p>
                   </button>
                 ))
               )}
