@@ -240,7 +240,7 @@ router.post('/request-verification', auth, async (req, res) => {
 router.get('/profile/:id', auth, async (req, res) => {
   try {
     const doctor = await User.findOne({ _id: req.params.id, role: 'DOCTOR' })
-      .select('name email profilePic specialization hospital registrationNumber qualifications experienceYears clinicAddress consultationFee bio schedule');
+      .select('name email phone profilePic specialization hospital registrationNumber stateMedicalCouncil qualificationInstitution hospitalsVisited qualifications experienceYears clinicAddress consultationFee bio schedule');
 
     if (!doctor) return res.status(404).json({ error: 'Doctor not found' });
 

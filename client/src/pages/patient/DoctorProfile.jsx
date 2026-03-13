@@ -56,6 +56,16 @@ const DoctorProfile = () => {
 
   const displayName = String(doctor?.name || '').replace(/^\s*(dr\.?\s*)+/i, '').trim();
 
+  const parseHospitals = (value, fallback) => {
+    if (Array.isArray(value)) return value.map((x) => String(x || '').trim()).filter(Boolean);
+    const raw = String(value || '').trim();
+    if (!raw) return fallback ? [fallback] : [];
+    const splitBy = raw.includes('||') ? '||' : raw.includes('\n') ? '\n' : ',';
+    return raw.split(splitBy).map((x) => x.trim()).filter(Boolean);
+  };
+
+  const hospitals = parseHospitals(doctor?.hospitalsVisited, doctor?.hospital);
+
   if (loading) {
     return (
       <Layout title="Doctor Profile" subtitle="Loading doctor details...">
@@ -107,10 +117,53 @@ const DoctorProfile = () => {
                 <p className="flex items-center gap-2"><Hospital size={14} /> {doctor.hospital || 'Hospital not specified'}</p>
                 <p className="flex items-center gap-2"><BadgeCheck size={14} /> Reg: {doctor.registrationNumber || 'N/A'}</p>
                 <p className="flex items-center gap-2"><Mail size={14} /> {doctor.email || 'N/A'}</p>
+                <p className="flex items-center gap-2"><span className="font-semibold">Phone:</span> {doctor.phone || 'N/A'}</p>
                 <p className="flex items-center gap-2"><MapPin size={14} /> {doctor.clinicAddress || 'Address not available'}</p>
                 <p className="flex items-center gap-2"><Wallet size={14} /> Consultation Fee: {doctor.consultationFee ? `₹${doctor.consultationFee}` : 'Not specified'}</p>
               </div>
             </div>
+          </div>
+        </div>
+
+        <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm">
+          <h3 className="text-xl font-display font-bold text-slate-800 mb-4">Professional Information</h3>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+              <p className="text-xs text-slate-500 font-bold uppercase">Primary Specialization</p>
+              <p className="mt-1 font-semibold text-slate-700">{doctor.specialization || 'Not specified'}</p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+              <p className="text-xs text-slate-500 font-bold uppercase">State Medical Council</p>
+              <p className="mt-1 font-semibold text-slate-700">{doctor.stateMedicalCouncil || 'Not specified'}</p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+              <p className="text-xs text-slate-500 font-bold uppercase">Highest Qualification</p>
+              <p className="mt-1 font-semibold text-slate-700">{doctor.qualifications || 'Not specified'}</p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+              <p className="text-xs text-slate-500 font-bold uppercase">Qualification Institution</p>
+              <p className="mt-1 font-semibold text-slate-700">{doctor.qualificationInstitution || 'Not specified'}</p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 md:col-span-2">
+              <p className="text-xs text-slate-500 font-bold uppercase">Experience</p>
+              <p className="mt-1 font-semibold text-slate-700">{doctor.experienceYears != null ? `${doctor.experienceYears} years` : 'Not specified'}</p>
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <p className="text-sm font-bold text-slate-800 mb-2">Set of Hospitals</p>
+            {hospitals.length === 0 ? (
+              <p className="text-sm text-slate-500">No hospitals listed.</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {hospitals.map((h, idx) => (
+                  <span key={`${h}-${idx}`} className="inline-flex px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-100 text-blue-700 border border-blue-200">
+                    {h}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 

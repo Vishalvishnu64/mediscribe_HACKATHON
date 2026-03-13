@@ -23,8 +23,8 @@ import certifi
 # CONFIGURATION
 # ──────────────────────────────────────────────
 
-# 🔑 Paste your Groq API key here
-GROQ_API_KEY = "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"
+# 🔑 Read Groq API key from environment
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 
 # 🔑 MongoDB Connection String
 MONGO_URI = "mongodb+srv://yadumithra1_db_user:yadumithra210@cluster0.thg6tib.mongodb.net/?appName=Cluster0"
