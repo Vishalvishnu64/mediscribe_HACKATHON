@@ -20,6 +20,7 @@ const Sidebar = () => {
   const patientLinks = [
     { to: '/patient/dashboard', label: 'Dashboard', icon: <LayoutDashboard size={20} /> },
     { to: '/patient/prescriptions', label: 'Upload Rx', icon: <FileText size={20} /> },
+    { to: '/patient/doctors', label: 'Doctors', icon: <Users size={20} /> },
     { to: '/patient/medications', label: 'Active Meds', icon: <Pill size={20} /> },
     { to: '/patient/reminders', label: 'Reminders', icon: <Clock size={20} /> },
     { to: '/patient/history', label: 'Medical History', icon: <CalendarCheck size={20} /> },

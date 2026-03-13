@@ -10,6 +10,17 @@ const userSchema = new mongoose.Schema({
   registrationNumber: { type: String },
   hospital: { type: String },
   specialization: { type: String },
+  qualifications: { type: String },
+  experienceYears: { type: Number },
+  clinicAddress: { type: String },
+  consultationFee: { type: Number },
+  bio: { type: String },
+  schedule: [{
+    day: { type: String },
+    start: { type: String },
+    end: { type: String },
+    mode: { type: String } // In-person / Online
+  }],
   
   // Patient specific
   age: { type: Number },

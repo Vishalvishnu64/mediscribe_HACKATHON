@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Layout from '../../components/Layout';
-import { FileText, Pill, CalendarDays, Loader2, X, PencilLine, Save, Plus, Trash2, FlaskConical } from 'lucide-react';
+import { FileText, Pill, CalendarDays, Loader2, X, PencilLine, Save, Plus, Trash2, FlaskConical, FolderOpen } from 'lucide-react';
 import { ResponsiveContainer, LineChart, CartesianGrid, XAxis, YAxis, Tooltip, Line } from 'recharts';
 
 const MedicalHistory = () => {
@@ -90,6 +90,8 @@ const MedicalHistory = () => {
     const match = String(v).replace(',', '.').match(/-?\d+(\.\d+)?/);
     return match ? Number(match[0]) : null;
   };
+
+  const getUploadUrl = (imagePath) => imagePath ? `http://localhost:5000/uploads/${imagePath}` : null;
 
   useEffect(() => {
     fetchHistory();
@@ -386,9 +388,23 @@ const MedicalHistory = () => {
                     >
                       <div className="flex justify-between items-start mb-1">
                         <h4 className="font-bold text-slate-800">Dr. {rx.doctorRecognizedName || 'Unknown'}</h4>
-                        <span className={`text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-md ${rx.type === 'NEW' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'}`}>
-                          {rx.type}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          {rx.imagePath && (
+                            <a
+                              href={getUploadUrl(rx.imagePath)}
+                              target="_blank"
+                              rel="noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="inline-flex items-center justify-center h-6 w-6 rounded-md border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                              title="Open uploaded scan"
+                            >
+                              <FolderOpen size={12} />
+                            </a>
+                          )}
+                          <span className={`text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-md ${rx.type === 'NEW' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'}`}>
+                            {rx.type}
+                          </span>
+                        </div>
                       </div>
                       <p className="text-sm text-slate-500 font-medium flex items-center gap-1">
                         <CalendarDays size={14} /> {new Date(rx.date || rx.createdAt).toLocaleString()}
@@ -439,17 +455,35 @@ const MedicalHistory = () => {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {testResults.map((tr) => (
-                  <button
+                  <div
                     key={tr._id}
-                    type="button"
                     onClick={() => openTestResultDetails(tr)}
-                    className="bg-slate-50 border border-slate-100 rounded-2xl p-4 text-left hover:bg-white hover:border-indigo-200 transition"
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') openTestResultDetails(tr);
+                    }}
+                    className="bg-slate-50 border border-slate-100 rounded-2xl p-4 text-left hover:bg-white hover:border-indigo-200 transition cursor-pointer"
                   >
                     <div className="flex items-center justify-between gap-3 mb-2">
                       <h4 className="font-bold text-slate-800 truncate">{tr.title || tr.rawOcrData?.report?.title || 'Lab Test Result'}</h4>
-                      <span className="text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-700">
-                        Lab
-                      </span>
+                      <div className="flex items-center gap-2">
+                        {tr.imagePath && (
+                          <a
+                            href={getUploadUrl(tr.imagePath)}
+                            target="_blank"
+                            rel="noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
+                            title="Open uploaded scan"
+                          >
+                            <FolderOpen size={14} />
+                          </a>
+                        )}
+                        <span className="text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-700">
+                          Lab
+                        </span>
+                      </div>
                     </div>
                     <p className="text-sm text-slate-500 font-medium flex items-center gap-1 mb-3">
                       <CalendarDays size={14} /> {new Date(tr.testDate || tr.createdAt).toLocaleString()}
@@ -462,7 +496,7 @@ const MedicalHistory = () => {
                       </p>
                       <p className="text-slate-500 truncate">{tr.rawOcrData?.report?.labName || 'Lab/Hospital not specified'}</p>
                     </div>
-                  </button>
+                  </div>
                 ))}
               </div>
             )}
@@ -634,6 +668,14 @@ const MedicalHistory = () => {
                     <p><span className="text-slate-500">Clinic:</span> {displayOrMissing(selectedPrescription.rawOcrData?.doctor?.clinic)}</p>
                     <p><span className="text-slate-500">Visit date:</span> {displayOrMissing(selectedPrescription.date ? new Date(selectedPrescription.date).toLocaleString() : null)}</p>
                     <p><span className="text-slate-500">Prescription type:</span> <span className="inline-flex px-2 py-0.5 rounded-md text-xs font-bold bg-slate-200 text-slate-700">{selectedPrescription.type || 'OLD'}</span></p>
+                    {selectedPrescription.imagePath && (
+                      <p>
+                        <span className="text-slate-500">Scan file:</span>{' '}
+                        <a href={getUploadUrl(selectedPrescription.imagePath)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary font-semibold hover:underline">
+                          <FolderOpen size={14} /> Open prescription image
+                        </a>
+                      </p>
+                    )}
                   </div>
                 )}
               </div>
@@ -740,7 +782,22 @@ const MedicalHistory = () => {
                   <p><span className="text-slate-500">Lab:</span> {selectedTestResult.rawOcrData?.report?.labName || 'Not specified'}</p>
                   <p><span className="text-slate-500">Patient:</span> {selectedTestResult.rawOcrData?.patient?.name || 'Not specified'}</p>
                   <p><span className="text-slate-500">Summary:</span> {selectedTestResult.rawOcrData?.summary || 'Not specified'}</p>
+                  {selectedTestResult.imagePath && (
+                    <p>
+                      <span className="text-slate-500">Scan file:</span>{' '}
+                      <a href={getUploadUrl(selectedTestResult.imagePath)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary font-semibold hover:underline">
+                        <FolderOpen size={14} /> Open report image
+                      </a>
+                    </p>
+                  )}
                 </div>
+                {selectedTestResult.imagePath && (
+                  <img
+                    src={getUploadUrl(selectedTestResult.imagePath)}
+                    alt="Uploaded lab report"
+                    className="mt-3 w-full h-44 object-cover rounded-xl border border-slate-200"
+                  />
+                )}
               </div>
 
               <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 lg:col-span-2">

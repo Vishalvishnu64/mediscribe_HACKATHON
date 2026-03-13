@@ -1,10 +1,18 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { Search, Bell } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 const Topbar = ({ title, subtitle }) => {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const [searchText, setSearchText] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [showSearchResults, setShowSearchResults] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
+  const isPatient = user?.role === 'PATIENT';
 
   useEffect(() => {
     const loadNotifications = async () => {
@@ -43,6 +51,32 @@ const Topbar = ({ title, subtitle }) => {
 
   const unreadCount = useMemo(() => notifications.length, [notifications]);
 
+  useEffect(() => {
+    const q = searchText.trim();
+    if (!isPatient || q.length < 2) {
+      setSearchResults([]);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        const res = await axios.get('/doctors/list', { params: { q } });
+        setSearchResults(res.data || []);
+      } catch (err) {
+        console.error('Doctor search failed', err);
+      }
+    }, 250);
+
+    return () => clearTimeout(timer);
+  }, [searchText, isPatient]);
+
+  const runSearch = () => {
+    if (!isPatient) return;
+    const q = searchText.trim();
+    navigate(q ? `/patient/doctors?q=${encodeURIComponent(q)}` : '/patient/doctors');
+    setShowSearchResults(false);
+  };
+
   return (
     <header className="bg-white/95 backdrop-blur-md border border-slate-200 rounded-3xl p-5 px-6 shadow-[0_22px_42px_rgba(14,67,77,0.05)] flex items-center justify-between gap-6 relative z-30">
       
@@ -57,9 +91,47 @@ const Topbar = ({ title, subtitle }) => {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
           <input 
             type="search" 
-            placeholder="Search..." 
+            value={searchText}
+            onChange={(e) => {
+              setSearchText(e.target.value);
+              setShowSearchResults(true);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') runSearch();
+            }}
+            onFocus={() => setShowSearchResults(true)}
+            placeholder={isPatient ? 'Search doctors by name, hospital, specialization...' : 'Search...'} 
             className="bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-2.5 outline-none focus:border-primary focus:bg-white transition-colors w-64 text-sm font-medium"
           />
+
+          {isPatient && showSearchResults && searchText.trim().length >= 2 && (
+            <div className="absolute top-[46px] left-0 right-0 bg-white border border-slate-200 rounded-xl shadow-lg z-50 p-2 max-h-72 overflow-auto">
+              {searchResults.length === 0 ? (
+                <button
+                  type="button"
+                  onClick={runSearch}
+                  className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 text-sm text-slate-600"
+                >
+                  No direct match. View full doctor list for “{searchText.trim()}”
+                </button>
+              ) : (
+                searchResults.slice(0, 6).map((doc) => (
+                  <button
+                    key={doc._id}
+                    type="button"
+                    onClick={() => {
+                      navigate(`/patient/doctors/${doc._id}`);
+                      setShowSearchResults(false);
+                    }}
+                    className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50"
+                  >
+                    <p className="text-sm font-semibold text-slate-700 truncate">Dr. {doc.name}</p>
+                    <p className="text-xs text-slate-500 truncate">{doc.specialization || 'General'} • {doc.hospital || 'Hospital not set'}</p>
+                  </button>
+                ))
+              )}
+            </div>
+          )}
         </div>
 
         {/* Notification */}

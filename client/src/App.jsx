@@ -11,6 +11,8 @@ import ActiveMeds from './pages/patient/ActiveMeds';
 import MedicalHistory from './pages/patient/MedicalHistory';
 import Reminders from './pages/patient/Reminders';
 import Settings from './pages/patient/Settings';
+import DoctorsDirectory from './pages/patient/DoctorsDirectory';
+import DoctorProfile from './pages/patient/DoctorProfile';
 import DoctorDashboard from './pages/doctor/DoctorDashboard';
 import NomineeSubscribe from './pages/NomineeSubscribe';
 
@@ -32,6 +34,8 @@ function App() {
             <Route path="/patient/reminders" element={<Reminders />} />
             <Route path="/patient/history" element={<MedicalHistory />} />
             <Route path="/patient/settings" element={<Settings />} />
+            <Route path="/patient/doctors" element={<DoctorsDirectory />} />
+            <Route path="/patient/doctors/:doctorId" element={<DoctorProfile />} />
           </Route>
 
           {/* Doctor Routes */}
