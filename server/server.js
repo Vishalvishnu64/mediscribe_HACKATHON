@@ -2,9 +2,13 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const dotenv = require('dotenv');
+const dns = require('dns');
 const path = require('path');
 
 dotenv.config();
+
+// Fail fast instead of buffering DB operations when not connected
+mongoose.set('bufferCommands', false);
 
 const app = express();
 
@@ -30,21 +34,40 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'MedTrack AI Server is running' });
 });
 
-// Database Connection
-mongoose.connect(process.env.MONGODB_URI, {
-  tlsAllowInvalidCertificates: true // For dev testing, bypasses internal TLS alert if IP is not whitelisted flawlessly
-})
-.then(() => {
-  console.log('✅ Connected to MongoDB Atlas');
-  const { initCronJobs } = require('./utils/cronJobs');
-  initCronJobs();
-})
-.catch(err => console.error('❌ MongoDB Connection Error:', err));
+async function startServer() {
+  try {
+    try {
+      await mongoose.connect(process.env.MONGODB_URI, {
+        tlsAllowInvalidCertificates: true, // Dev-only TLS bypass
+        serverSelectionTimeoutMS: 10000
+      });
+    } catch (err) {
+      const dnsBlocked = err?.code === 'ECONNREFUSED' && (err?.syscall === 'querySrv' || err?.syscall === 'queryA');
+      if (!dnsBlocked) throw err;
 
-// Start server
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`========================================`);
-  console.log(` MedTrack AI Server running on port ${PORT}`);
-  console.log(`========================================`);
-});
+      console.warn('⚠️ Atlas DNS lookup failed. Retrying with public DNS resolvers (1.1.1.1, 8.8.8.8)...');
+      dns.setServers(['1.1.1.1', '8.8.8.8']);
+
+      await mongoose.connect(process.env.MONGODB_URI, {
+        tlsAllowInvalidCertificates: true,
+        serverSelectionTimeoutMS: 10000
+      });
+    }
+
+    console.log('✅ Connected to MongoDB Atlas');
+    const { initCronJobs } = require('./utils/cronJobs');
+    initCronJobs();
+
+    const PORT = process.env.PORT || 5000;
+    app.listen(PORT, () => {
+      console.log(`========================================`);
+      console.log(` MedTrack AI Server running on port ${PORT}`);
+      console.log(`========================================`);
+    });
+  } catch (err) {
+    console.error('❌ MongoDB Connection Error:', err);
+    process.exit(1);
+  }
+}
+
+startServer();
