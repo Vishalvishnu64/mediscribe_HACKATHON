@@ -155,17 +155,37 @@ const ActiveMeds = () => {
 
   const uploadLocationImage = async (id, file) => {
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async () => {
-      try {
-        const res = await axios.put(`/medications/${id}`, { locationImage: String(reader.result || '') });
-        setMedications(prev => prev.map(m => m._id === id ? res.data : m));
-      } catch (err) {
-        console.error('Upload location image error:', err.response?.data || err.message);
-        alert('Failed to upload image: ' + (err.response?.data?.error || err.message));
-      }
-    };
-    reader.readAsDataURL(file);
+    const compressImage = (inputFile) => new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const img = new Image();
+        img.onload = () => {
+          const maxWidth = 1200;
+          const scale = Math.min(1, maxWidth / img.width);
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.round(img.width * scale);
+          canvas.height = Math.round(img.height * scale);
+          const ctx = canvas.getContext('2d');
+          if (!ctx) return reject(new Error('Canvas not supported'));
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          const out = canvas.toDataURL('image/jpeg', 0.75);
+          resolve(out);
+        };
+        img.onerror = reject;
+        img.src = String(reader.result || '');
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(inputFile);
+    });
+
+    try {
+      const compressedDataUrl = await compressImage(file);
+      const res = await axios.put(`/medications/${id}`, { locationImage: compressedDataUrl });
+      setMedications(prev => prev.map(m => m._id === id ? res.data : m));
+    } catch (err) {
+      console.error('Upload location image error:', err.response?.data || err.message);
+      alert('Failed to upload image: ' + (err.response?.data?.error || err.message));
+    }
   };
 
   const removeLocationImage = async (id) => {
