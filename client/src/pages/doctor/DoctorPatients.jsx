@@ -15,6 +15,7 @@ const DoctorPatients = () => {
 
   const [addOpen, setAddOpen] = useState(false);
   const [addLoading, setAddLoading] = useState(false);
+  const [addMessage, setAddMessage] = useState('');
   const [addForm, setAddForm] = useState({
     name: '',
     age: '',
@@ -106,10 +107,18 @@ const DoctorPatients = () => {
     e.preventDefault();
     try {
       setAddLoading(true);
-      await axios.post('/doctor-panel/patients', {
+      setAddMessage('');
+      const res = await axios.post('/doctor-panel/patients', {
         ...addForm,
         age: addForm.age ? Number(addForm.age) : undefined,
       });
+
+      if (res.data?.matchedPatientInDb) {
+        setAddMessage(`Verified in patient DB: ${res.data.matchedPatientName || addForm.name}. Linked to My Doctors.`);
+      } else {
+        setAddMessage('Patient name not found in patient DB. Added as local doctor patient only.');
+      }
+
       setAddOpen(false);
       setAddForm({
         name: '',
@@ -291,6 +300,12 @@ const DoctorPatients = () => {
               </div>
             </form>
           </div>
+        </div>
+      )}
+
+      {addMessage && (
+        <div className="fixed bottom-4 right-4 z-50 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-800 shadow-lg">
+          {addMessage}
         </div>
       )}
 

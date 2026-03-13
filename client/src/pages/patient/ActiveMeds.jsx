@@ -69,6 +69,11 @@ const ActiveMeds = () => {
     return med.doctorName || med.prescriptionId?.doctorRecognizedName || null;
   };
 
+  const formatDoctorName = (name) => {
+    const clean = String(name || '').replace(/^\s*((dr|doctor)\.?\s*)+/i, '').trim();
+    return clean ? `Dr. ${clean}` : 'Doctor';
+  };
+
   const isTimeToTake = (med) => {
     if (!med.reminderTimes || med.reminderTimes.length === 0) return true;
     const now = new Date();
@@ -426,7 +431,7 @@ const ActiveMeds = () => {
                     <div className="flex items-center gap-2">
                       <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-700">
                         <User size={14} className="text-slate-400" />
-                        {getDoctorDisplay(med) ? `Dr. ${getDoctorDisplay(med)}` : <span className="text-slate-400 italic">Not set</span>}
+                        {getDoctorDisplay(med) ? formatDoctorName(getDoctorDisplay(med)) : <span className="text-slate-400 italic">Not set</span>}
                       </span>
                       <button onClick={() => startEditing(med)} className="text-slate-400 hover:text-emerald-600 p-1" title="Edit doctor name">
                         <Pencil size={14} />

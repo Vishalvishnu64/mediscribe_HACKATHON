@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { NavLink } from 'react-router-dom';
+import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import { 
   HeartPulse, 
@@ -18,6 +19,24 @@ import {
 const Sidebar = () => {
   const { user, logout } = useAuth();
   const isDoctor = user?.role === 'DOCTOR';
+  const [doctorGlance, setDoctorGlance] = useState({ today_patients: 0, critical_alerts: 0 });
+
+  useEffect(() => {
+    const loadDoctorGlance = async () => {
+      if (!isDoctor) return;
+      try {
+        const res = await axios.get('/doctor-panel/glance');
+        setDoctorGlance({
+          today_patients: Number(res.data?.today_patients || 0),
+          critical_alerts: Number(res.data?.critical_alerts || 0),
+        });
+      } catch (err) {
+        console.error(err);
+      }
+    };
+
+    loadDoctorGlance();
+  }, [isDoctor]);
 
   const patientLinks = [
     { to: '/patient/dashboard', label: 'Dashboard', icon: <LayoutDashboard size={20} /> },
@@ -76,8 +95,17 @@ const Sidebar = () => {
         ))}
       </nav>
 
+      {isDoctor && (
+        <div className="mt-auto bg-emerald-50 border border-emerald-100 rounded-2xl p-4">
+          <p className="text-xs text-slate-500 font-semibold">Today at a glance</p>
+          <p className="text-4xl leading-none font-display font-bold text-slate-800 mt-2">{doctorGlance.today_patients}</p>
+          <p className="text-sm font-semibold text-slate-700">Patients Today</p>
+          <p className="text-sm text-slate-500 mt-2">{doctorGlance.critical_alerts} critical alerts active</p>
+        </div>
+      )}
+
       {/* Logout Card */}
-      <div className="mt-auto bg-slate-50 border border-slate-100 rounded-2xl p-4">
+      <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4">
         <div className="flex items-center gap-3 mb-4">
           <div className="w-10 h-10 rounded-full bg-slate-200 overflow-hidden">
             <img src={user?.profilePic || "https://api.dicebear.com/7.x/notionists/svg?seed="+user?.name} alt="avatar" />

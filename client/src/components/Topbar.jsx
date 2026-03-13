@@ -15,6 +15,11 @@ const Topbar = ({ title, subtitle }) => {
   const isPatient = user?.role === 'PATIENT';
   const isDoctor = user?.role === 'DOCTOR';
 
+  const formatDoctorName = (name) => {
+    const clean = String(name || '').replace(/^\s*((dr|doctor)\.?\s*)+/i, '').trim();
+    return clean ? `Dr. ${clean}` : 'Doctor';
+  };
+
   useEffect(() => {
     const loadNotifications = async () => {
       try {
@@ -135,7 +140,7 @@ const Topbar = ({ title, subtitle }) => {
                     }}
                     className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50"
                   >
-                    <p className="text-sm font-semibold text-slate-700 truncate">{isPatient ? `Dr. ${doc.name}` : doc.name}</p>
+                    <p className="text-sm font-semibold text-slate-700 truncate">{isPatient ? formatDoctorName(doc.name) : doc.name}</p>
                     <p className="text-xs text-slate-500 truncate">{isPatient ? `${doc.specialization || 'General'} • ${doc.hospital || 'Hospital not set'}` : `${doc.primary_condition || 'No condition'} • ${doc.status || '—'}`}</p>
                   </button>
                 ))

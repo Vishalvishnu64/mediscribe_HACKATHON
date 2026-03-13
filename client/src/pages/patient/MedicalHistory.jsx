@@ -28,6 +28,7 @@ const MedicalHistory = () => {
   });
   const [savingMetric, setSavingMetric] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [imagingRecords, setImagingRecords] = useState([]);
 
   const formatForInputDateTime = (value) => {
     if (!value) return '';
@@ -93,24 +94,47 @@ const MedicalHistory = () => {
 
   const getUploadUrl = (imagePath) => imagePath ? `http://localhost:5000/uploads/${imagePath}` : null;
 
+  const formatDoctorName = (name) => {
+    const clean = String(name || '').replace(/^\s*((dr|doctor)\.?\s*)+/i, '').trim();
+    return clean ? `Dr. ${clean}` : 'Doctor';
+  };
+
   useEffect(() => {
     fetchHistory();
   }, []);
 
+  useEffect(() => {
+    const timer = setInterval(async () => {
+      try {
+        const [metricsRes, imagingRes] = await Promise.all([
+          axios.get('/medications/metrics'),
+          axios.get('/medications/doctor-imaging')
+        ]);
+        setManualMetrics(metricsRes.data || []);
+        setImagingRecords(imagingRes.data || []);
+      } catch {
+        // silent refresh failure
+      }
+    }, 15000);
+    return () => clearInterval(timer);
+  }, []);
+
   const fetchHistory = async () => {
     try {
-      const [prescRes, medsRes, allMedsRes, testRes, metricsRes] = await Promise.all([
+      const [prescRes, medsRes, allMedsRes, testRes, metricsRes, imagingRes] = await Promise.all([
         axios.get('/medications/prescriptions'),
         axios.get('/medications/history'),
         axios.get('/medications/all'),
         axios.get('/medications/test-results'),
-        axios.get('/medications/metrics')
+        axios.get('/medications/metrics'),
+        axios.get('/medications/doctor-imaging')
       ]);
       setPrescriptions(prescRes.data);
       setHistoryMeds(medsRes.data);
       setAllMeds(allMedsRes.data);
       setTestResults(testRes.data || []);
       setManualMetrics(metricsRes.data || []);
+      setImagingRecords(imagingRes.data || []);
     } catch (err) {
       console.error(err);
     } finally {
@@ -240,6 +264,15 @@ const MedicalHistory = () => {
     value ? value : <span className="text-amber-600 font-medium">Not specified</span>
   );
 
+  const verificationBadge = (rx) => {
+    const status = rx?.verificationStatus || 'UNVERIFIED';
+    if (status === 'VERIFIED') return { label: '✓ Verified', cls: 'bg-emerald-100 text-emerald-700' };
+    if (status === 'REJECTED') return { label: '✕ Rejected', cls: 'bg-rose-100 text-rose-700' };
+    if (status === 'CORRECTED') return { label: '✎ Corrected', cls: 'bg-amber-100 text-amber-700' };
+    if (status === 'PENDING_DOCTOR') return { label: '⌛ Pending', cls: 'bg-blue-100 text-blue-700' };
+    return { label: 'Unverified', cls: 'bg-slate-200 text-slate-600' };
+  };
+
   const chartSeriesMap = {};
   const metricMetaMap = metricDefs.reduce((acc, m) => {
     acc[m.key] = { key: m.key, label: m.label, unit: m.unit || '' };
@@ -276,6 +309,7 @@ const MedicalHistory = () => {
   });
 
   manualMetrics.forEach((row) => {
+    if (row.source === 'DOCTOR_RADIOLOGY') return;
     if (!metricMetaMap[row.metricKey]) {
       metricMetaMap[row.metricKey] = {
         key: row.metricKey,
@@ -289,7 +323,7 @@ const MedicalHistory = () => {
       date,
       dateLabel: date.toLocaleDateString(),
       value: Number(row.value),
-      source: 'MANUAL'
+      source: row.source || 'MANUAL'
     });
   });
 
@@ -386,8 +420,19 @@ const MedicalHistory = () => {
                       onClick={() => openVisitDetails(rx)}
                       className={`bg-slate-50 border rounded-2xl p-4 flex-1 text-left transition hover:border-primary/40 hover:bg-white ${selectedPrescription?._id === rx._id && isVisitModalOpen ? 'border-primary/40 ring-1 ring-primary/20' : 'border-slate-100'}`}
                     >
+                      {(() => {
+                        const vb = verificationBadge(rx);
+                        return (
+                          <div className="mb-2">
+                            <span className={`inline-flex text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-md ${vb.cls}`}>
+                              {vb.label}
+                            </span>
+                          </div>
+                        );
+                      })()}
+
                       <div className="flex justify-between items-start mb-1">
-                        <h4 className="font-bold text-slate-800">Dr. {rx.doctorRecognizedName || 'Unknown'}</h4>
+                        <h4 className="font-bold text-slate-800">{formatDoctorName(rx.doctorRecognizedName || 'Unknown')}</h4>
                         <div className="flex items-center gap-2">
                           {rx.imagePath && (
                             <a
@@ -412,6 +457,23 @@ const MedicalHistory = () => {
                       <p className="text-xs text-slate-400 mt-1">
                         {rx.rawOcrData?.medicines?.length || 0} medicine(s) extracted
                       </p>
+                      {rx.verificationStatus === 'CORRECTED' && (
+                        <>
+                          <p className="text-xs text-amber-700 mt-1 font-medium">
+                            Corrected by doctor{rx.verificationNote ? `: ${rx.verificationNote}` : ''}
+                          </p>
+                          {rx.correctedOcrData && (
+                            <p className="text-[11px] text-slate-500 mt-1 line-clamp-2">
+                              {JSON.stringify(rx.correctedOcrData)}
+                            </p>
+                          )}
+                        </>
+                      )}
+                      {rx.verificationStatus === 'REJECTED' && (
+                        <p className="text-xs text-rose-700 mt-1 font-medium">
+                          Rejected by doctor{rx.verificationNote ? `: ${rx.verificationNote}` : ''}
+                        </p>
+                      )}
                     </button>
                   </div>
                 ))}
@@ -580,6 +642,42 @@ const MedicalHistory = () => {
                       <Line type="monotone" dataKey="value" stroke="#0d8a7b" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }} />
                     </LineChart>
                   </ResponsiveContainer>
+                </div>
+              )}
+            </div>
+
+            <div className="mt-6 bg-slate-50 border border-slate-200 rounded-2xl p-4">
+              <h4 className="font-bold text-slate-800 mb-3">Radiology / Imaging Records</h4>
+              {imagingRecords.length === 0 ? (
+                <p className="text-sm text-slate-500 py-6 text-center">No imaging records yet.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="text-left text-slate-500 border-b border-slate-200">
+                      <tr>
+                        <th className="py-2 pr-3">Date</th>
+                        <th className="py-2 pr-3">Doctor</th>
+                        <th className="py-2 pr-3">Modality</th>
+                        <th className="py-2 pr-3">Body Part</th>
+                        <th className="py-2 pr-3">Finding</th>
+                        <th className="py-2 pr-3">Impression</th>
+                        <th className="py-2">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {imagingRecords.map((row) => (
+                        <tr key={row.id || row._id} className="border-b border-slate-100 last:border-0 align-top">
+                          <td className="py-2 pr-3 whitespace-nowrap">{row.recorded_at ? new Date(row.recorded_at).toLocaleDateString() : '—'}</td>
+                          <td className="py-2 pr-3 whitespace-nowrap">{row.doctorName || 'Doctor'}</td>
+                          <td className="py-2 pr-3">{row.modality || '—'}</td>
+                          <td className="py-2 pr-3">{row.body_part || '—'}</td>
+                          <td className="py-2 pr-3 max-w-[220px] truncate" title={row.finding || ''}>{row.finding || '—'}</td>
+                          <td className="py-2 pr-3 max-w-[220px] truncate" title={row.impression || ''}>{row.impression || '—'}</td>
+                          <td className="py-2">{row.status || 'Final'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </div>

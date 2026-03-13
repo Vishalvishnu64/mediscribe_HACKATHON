@@ -5,6 +5,17 @@ const User = require('../models/User');
 const Connection = require('../models/Connection');
 const Prescription = require('../models/Prescription');
 
+const stripDoctorPrefix = (value) =>
+  String(value || '')
+    .replace(/^\s*((dr|doctor)\.?\s*)+/i, '')
+    .trim();
+
+const normalizeDoctorName = (value) =>
+  stripDoctorPrefix(value)
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+
 // Doctor directory search (for patient)
 router.get('/list', auth, async (req, res) => {
   try {
@@ -37,22 +48,11 @@ router.get('/my', auth, async (req, res) => {
   try {
     if (req.user.role !== 'PATIENT') return res.status(403).json({ error: 'Unauthorized' });
 
-    const stripDoctorPrefix = (value) =>
-      String(value || '')
-        .replace(/^\s*(dr\.?\s*)+/i, '')
-        .trim();
-
-    const normalize = (value) =>
-      stripDoctorPrefix(value)
-        .toLowerCase()
-        .replace(/\s+/g, ' ')
-        .trim();
+    const normalize = (value) => normalizeDoctorName(value);
 
     const prescriptions = await Prescription.find({ patientId: req.user.id })
       .select('doctorRecognizedName doctorRegNo date createdAt')
       .sort({ date: -1, createdAt: -1 });
-
-    if (!prescriptions.length) return res.json([]);
 
     const dbDoctors = await User.find({ role: 'DOCTOR' })
       .select('name profilePic specialization hospital registrationNumber qualifications experienceYears schedule');
@@ -97,11 +97,140 @@ router.get('/my', auth, async (req, res) => {
       }
     });
 
+    const linkedConnections = await Connection.find({
+      patientId: req.user.id,
+      status: { $in: ['APPROVED', 'CORRECTED'] }
+    })
+      .populate('doctorId', 'name profilePic specialization hospital registrationNumber qualifications experienceYears schedule')
+      .sort({ updatedAt: -1, createdAt: -1 });
+
+    linkedConnections.forEach((conn) => {
+      const doctor = conn.doctorId;
+      if (!doctor) return;
+      const key = `db:${doctor._id}`;
+      const linkedAt = conn.updatedAt || conn.createdAt || new Date();
+
+      if (!merged.has(key)) {
+        merged.set(key, {
+          doctorId: doctor._id,
+          name: stripDoctorPrefix(doctor.name || 'Unknown Doctor'),
+          profilePic: doctor.profilePic || null,
+          specialization: doctor.specialization || null,
+          hospital: doctor.hospital || null,
+          registrationNumber: doctor.registrationNumber || null,
+          inDatabase: true,
+          canOpenProfile: true,
+          latestPrescriptionDate: linkedAt,
+          prescriptionCount: 0,
+        });
+      } else {
+        const row = merged.get(key);
+        if (new Date(linkedAt).getTime() > new Date(row.latestPrescriptionDate).getTime()) {
+          row.latestPrescriptionDate = linkedAt;
+        }
+      }
+    });
+
     const out = Array.from(merged.values()).sort(
       (a, b) => new Date(b.latestPrescriptionDate).getTime() - new Date(a.latestPrescriptionDate).getTime()
     );
 
     res.json(out);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Find doctor and create verification request for a prescription
+router.post('/request-verification', auth, async (req, res) => {
+  try {
+    if (req.user.role !== 'PATIENT') return res.status(403).json({ error: 'Unauthorized' });
+
+    const { prescriptionId } = req.body;
+    if (!prescriptionId) return res.status(400).json({ error: 'prescriptionId is required' });
+
+    const prescription = await Prescription.findOne({ _id: prescriptionId, patientId: req.user.id });
+    if (!prescription) return res.status(404).json({ error: 'Prescription not found' });
+
+    const regNo = String(prescription.doctorRegNo || '').trim();
+    const recognizedName = String(prescription.doctorRecognizedName || '').trim();
+    const normalizedName = normalizeDoctorName(recognizedName);
+
+    const connectedDoctorIds = await Connection.find({
+      patientId: req.user.id,
+      status: { $in: ['APPROVED', 'CORRECTED'] }
+    }).distinct('doctorId');
+
+    let doctor = null;
+
+    if (connectedDoctorIds.length) {
+      doctor = await User.findOne({
+        _id: { $in: connectedDoctorIds },
+        role: 'DOCTOR',
+        ...(regNo
+          ? { registrationNumber: regNo }
+          : normalizedName
+            ? { name: new RegExp(`^\\s*(dr\\.?\\s*)*${normalizedName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'i') }
+            : {})
+      });
+
+      if (!doctor && normalizedName) {
+        const connectedDocs = await User.find({ _id: { $in: connectedDoctorIds }, role: 'DOCTOR' }).select('name registrationNumber');
+        doctor = connectedDocs.find((d) => normalizeDoctorName(d.name) === normalizedName) || null;
+      }
+    }
+
+    if (!doctor) {
+      if (regNo) {
+        doctor = await User.findOne({ role: 'DOCTOR', registrationNumber: regNo });
+      }
+      if (!doctor && normalizedName) {
+        const doctors = await User.find({ role: 'DOCTOR' }).select('name registrationNumber');
+        doctor = doctors.find((d) => normalizeDoctorName(d.name) === normalizedName) || null;
+      }
+    }
+
+    if (!doctor) {
+      return res.status(404).json({
+        found: false,
+        error: 'Doctor not found in your doctors or doctor database'
+      });
+    }
+
+    let connection = await Connection.findOne({
+      doctorId: doctor._id,
+      patientId: req.user.id,
+      prescriptionReference: prescription._id
+    });
+
+    if (!connection) {
+      connection = new Connection({
+        doctorId: doctor._id,
+        patientId: req.user.id,
+        status: 'PENDING',
+        initiatedBy: req.user.id,
+        prescriptionReference: prescription._id
+      });
+    } else {
+      connection.status = 'PENDING';
+    }
+
+    await connection.save();
+
+    prescription.doctorId = doctor._id;
+    prescription.verificationStatus = 'PENDING_DOCTOR';
+    await prescription.save();
+
+    res.json({
+      success: true,
+      found: true,
+      doctor: {
+        id: doctor._id,
+        name: doctor.name,
+        registrationNumber: doctor.registrationNumber || null,
+      },
+      requestId: connection._id,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -174,7 +303,7 @@ router.get('/requests', auth, async (req, res) => {
 
     const requests = await Connection.find({ doctorId: req.user.id, status: 'PENDING' })
       .populate('patientId', 'name age gender')
-      .populate('prescriptionReference', 'date rawOcrData');
+      .populate('prescriptionReference', 'date rawOcrData imagePath doctorRecognizedName doctorRegNo verificationStatus correctedOcrData verificationNote');
 
     res.json(requests);
   } catch (err) {
@@ -187,17 +316,33 @@ router.put('/requests/:id/status', auth, async (req, res) => {
   try {
     if (req.user.role !== 'DOCTOR') return res.status(403).json({ error: 'Unauthorized' });
 
-    const { status } = req.body; // 'APPROVED' or 'REJECTED'
+    const { status, correctedData, note } = req.body;
     const connection = await Connection.findById(req.params.id);
 
     if (!connection) return res.status(404).json({ error: 'Connection not found' });
-    
-    connection.status = status;
+
+    const next = String(status || '').toUpperCase();
+    if (!['APPROVED', 'VERIFIED', 'REJECTED', 'CORRECTED'].includes(next)) {
+      return res.status(400).json({ error: 'Invalid status' });
+    }
+
+    connection.status = next === 'VERIFIED' ? 'APPROVED' : next;
     await connection.save();
 
-    if (status === 'APPROVED') {
-       await Prescription.findByIdAndUpdate(connection.prescriptionReference, { verificationStatus: 'VERIFIED' });
+    const update = { reviewedAt: new Date() };
+    if (next === 'APPROVED' || next === 'VERIFIED') {
+      update.verificationStatus = 'VERIFIED';
+      update.verificationNote = note || '';
+    } else if (next === 'REJECTED') {
+      update.verificationStatus = 'REJECTED';
+      update.verificationNote = note || '';
+    } else if (next === 'CORRECTED') {
+      update.verificationStatus = 'CORRECTED';
+      if (correctedData) update.correctedOcrData = correctedData;
+      update.verificationNote = note || 'Corrected by doctor';
     }
+
+    await Prescription.findByIdAndUpdate(connection.prescriptionReference, update);
 
     res.json({ success: true, connection });
   } catch (err) {

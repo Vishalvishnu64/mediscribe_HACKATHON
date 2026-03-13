@@ -7,7 +7,11 @@ const metricEntrySchema = new mongoose.Schema({
   value: { type: Number, required: true },
   unit: { type: String, default: '' },
   recordedAt: { type: Date, required: true },
-  source: { type: String, enum: ['MANUAL', 'OCR'], default: 'MANUAL' }
+  source: {
+    type: String,
+    enum: ['MANUAL', 'OCR', 'DOCTOR_EHR', 'DOCTOR_LAB', 'DOCTOR_RADIOLOGY', 'DOCTOR_WEARABLE'],
+    default: 'MANUAL'
+  }
 }, { timestamps: true });
 
 metricEntrySchema.index({ patientId: 1, metricKey: 1, recordedAt: 1 });

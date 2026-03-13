@@ -13,6 +13,12 @@ const UploadPrescription = () => {
 
   const [matchedDoctor, setMatchedDoctor] = useState(null);
   const [connectionRequested, setConnectionRequested] = useState(false);
+  const [sendingVerification, setSendingVerification] = useState(false);
+
+  const formatDoctorName = (name) => {
+    const clean = String(name || '').replace(/^\s*((dr|doctor)\.?\s*)+/i, '').trim();
+    return clean ? `Dr. ${clean}` : 'Doctor';
+  };
 
   const handleFileChange = (e) => {
     if (e.target.files && e.target.files[0]) {
@@ -68,6 +74,23 @@ const UploadPrescription = () => {
      }
   };
 
+  const sendForVerification = async () => {
+    if (!result?.prescriptionId || sendingVerification) return;
+    try {
+      setSendingVerification(true);
+      await axios.post('/doctors/request-verification', {
+        prescriptionId: result.prescriptionId,
+      });
+      setConnectionRequested(true);
+      alert('Verification request sent to doctor dashboard.');
+    } catch (err) {
+      console.error('Failed sending verification', err);
+      alert(err?.response?.data?.error || 'Doctor not found for verification');
+    } finally {
+      setSendingVerification(false);
+    }
+  };
+
   return (
     <Layout title="Upload Prescription" subtitle="Digitize your medical records securely with MedTrack AI.">
       <div className="max-w-3xl mx-auto bg-white border border-slate-200 rounded-3xl p-8 shadow-sm">
@@ -105,7 +128,13 @@ const UploadPrescription = () => {
                 We identified {result.testsFound || result.extractedData?.tests?.length || 0} test value(s) from {result.extractedData?.report?.title || 'your uploaded report'}.
               </p>
             ) : (
-              <p className="text-slate-500 mb-8 font-medium">We identified {result.medicinesAdded} medications from Dr. {result.extractedData.doctor?.name}.</p>
+              <p className="text-slate-500 mb-8 font-medium">
+                We identified {result.medicinesAdded} medications from{' '}
+                <span className="inline-flex px-2 py-0.5 rounded-md bg-blue-100 text-blue-700 font-bold">
+                  {formatDoctorName(result.extractedData.doctor?.name || 'Unknown')}
+                </span>
+                .
+              </p>
             )}
             
             <div className="bg-slate-50 rounded-2xl p-6 text-left border border-slate-100 mb-6">
@@ -136,12 +165,24 @@ const UploadPrescription = () => {
               )}
             </div>
             
-            <button 
-              onClick={() => { setFile(null); setStatus('IDLE'); setResult(null); }}
-              className="bg-primary text-white font-bold py-3 px-8 rounded-xl shadow-md hover:bg-emerald-700 transition"
-            >
-              Upload Another
-            </button>
+            <div className="flex flex-wrap items-center justify-center gap-3">
+              {scanType === 'PRESCRIPTION' && (
+                <button
+                  onClick={sendForVerification}
+                  disabled={sendingVerification || connectionRequested}
+                  className="bg-blue-600 text-white font-bold py-3 px-8 rounded-xl shadow-md hover:bg-blue-700 transition disabled:opacity-60"
+                >
+                  {connectionRequested ? 'Verification Sent' : (sendingVerification ? 'Sending...' : 'Send for Verification')}
+                </button>
+              )}
+
+              <button 
+                onClick={() => { setFile(null); setStatus('IDLE'); setResult(null); }}
+                className="bg-primary text-white font-bold py-3 px-8 rounded-xl shadow-md hover:bg-emerald-700 transition"
+              >
+                Upload Another
+              </button>
+            </div>
           </div>
 
         ) : (

@@ -5,6 +5,9 @@ const Medication = require('../models/Medication');
 const Prescription = require('../models/Prescription');
 const TestResult = require('../models/TestResult');
 const MetricEntry = require('../models/MetricEntry');
+const DoctorPatient = require('../models/DoctorPatient');
+const Imaging = require('../models/Imaging');
+const User = require('../models/User');
 
 // Get all active medications for the logged-in patient
 router.get('/active', auth, async (req, res) => {
@@ -79,6 +82,44 @@ router.get('/metrics', auth, async (req, res) => {
   try {
     const rows = await MetricEntry.find({ patientId: req.user.id }).sort({ recordedAt: 1 });
     res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get radiology/imaging uploads linked to this patient (from doctor data hub)
+router.get('/doctor-imaging', auth, async (req, res) => {
+  try {
+    const links = await DoctorPatient.find({ patientId: req.user.id }).select('_id doctorId');
+    const linkIds = links.map((l) => l._id);
+    if (!linkIds.length) return res.json([]);
+
+    const rows = await Imaging.find({ patient_id: { $in: linkIds } }).sort({ recorded_at: -1 });
+    const doctorIds = [...new Set(links.map((l) => l.doctorId?.toString()).filter(Boolean))];
+    const doctors = doctorIds.length
+      ? await User.find({ _id: { $in: doctorIds } }).select('name')
+      : [];
+
+    const doctorNameMap = {};
+    doctors.forEach((d) => {
+      doctorNameMap[d._id.toString()] = d.name;
+    });
+
+    const linkMap = {};
+    links.forEach((l) => {
+      linkMap[l._id.toString()] = l.doctorId ? l.doctorId.toString() : null;
+    });
+
+    const result = rows.map((r) => {
+      const doctorId = linkMap[r.patient_id?.toString()] || null;
+      return {
+        ...r.toObject(),
+        id: r._id,
+        doctorName: doctorId ? doctorNameMap[doctorId] || 'Doctor' : 'Doctor',
+      };
+    });
+
+    res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

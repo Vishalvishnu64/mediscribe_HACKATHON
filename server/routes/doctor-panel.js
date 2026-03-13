@@ -13,6 +13,8 @@ const Timeline = require('../models/Timeline');
 const WearableData = require('../models/WearableData');
 const ClinicalAlert = require('../models/ClinicalAlert');
 const Appointment = require('../models/Appointment');
+const MetricEntry = require('../models/MetricEntry');
+const UnmatchedSourceUpload = require('../models/UnmatchedSourceUpload');
 
 // --- Helper: extract doctor ID from JWT ---
 function getDoctorId(req) {
@@ -31,6 +33,53 @@ function getDoctorId(req) {
 function buildDoctorFilter(doctorId) {
   if (!doctorId) return {};
   return { $or: [{ doctorId }, { doctorId: null }, { doctorId: { $exists: false } }] };
+}
+
+const escapeRegExp = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const normalizeName = (value = '') => String(value || '').trim().replace(/\s+/g, ' ');
+const slugifyMetricKey = (value = '') =>
+  String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '') || 'doctor_metric';
+
+async function resolveDoctorPatient({ doctorId, patient_id, patient_name }) {
+  if (patient_id && mongoose.Types.ObjectId.isValid(patient_id)) {
+    const byId = await DoctorPatient.findById(patient_id);
+    if (byId) return byId;
+  }
+
+  const name = normalizeName(patient_name);
+  if (!name) return null;
+  const filter = buildDoctorFilter(doctorId);
+  const nameFilter = { name: new RegExp(`^${escapeRegExp(name)}$`, 'i') };
+  const combined = Object.keys(filter).length ? { $and: [filter, nameFilter] } : nameFilter;
+  return DoctorPatient.findOne(combined);
+}
+
+async function resolvePatientUserId(doctorPatient, fallbackName) {
+  if (doctorPatient?.patientId) return doctorPatient.patientId;
+  const lookupName = normalizeName(fallbackName || doctorPatient?.name || '');
+  if (!lookupName) return null;
+  const row = await User.findOne({ role: 'PATIENT', name: new RegExp(`^${escapeRegExp(lookupName)}$`, 'i') }).select('_id');
+  return row?._id || null;
+}
+
+async function addMetricEntries(patientId, rows) {
+  if (!patientId || !Array.isArray(rows) || rows.length === 0) return;
+  const docs = rows
+    .filter((r) => Number.isFinite(Number(r.value)))
+    .map((r) => ({
+      patientId,
+      metricKey: r.metricKey,
+      metricLabel: r.metricLabel,
+      value: Number(r.value),
+      unit: r.unit || '',
+      recordedAt: r.recordedAt || new Date(),
+      source: r.source,
+    }));
+  if (docs.length) await MetricEntry.insertMany(docs);
 }
 
 // --- Auth (login via main app JWT — no separate login) ---
@@ -103,14 +152,66 @@ router.post('/patients', async (req, res) => {
     const ageNum = Number(age);
     if (!Number.isInteger(ageNum) || ageNum < 0 || ageNum > 150) return res.status(400).json({ error: 'Invalid age' });
     const today = new Date().toISOString().slice(0, 10);
-    const patient = await DoctorPatient.create({
-      doctorId: doctorId || undefined,
-      name: name.trim(), age: ageNum, gender: gender || undefined, blood_type: blood_type || undefined,
-      primary_condition: primary_condition.trim(), status: status || 'Stable',
-      smoking_status: smoking_status || undefined, allergies: allergies || undefined,
-      medications: medications || undefined, last_visit: today
+    const cleanName = normalizeName(name);
+
+    const matchedPatientUser = await User.findOne({
+      role: 'PATIENT',
+      name: new RegExp(`^${escapeRegExp(cleanName)}$`, 'i')
+    }).select('_id name');
+
+    let patient = null;
+    if (matchedPatientUser && doctorId) {
+      patient = await DoctorPatient.findOneAndUpdate(
+        { doctorId, patientId: matchedPatientUser._id },
+        {
+          doctorId,
+          patientId: matchedPatientUser._id,
+          name: cleanName,
+          age: ageNum,
+          gender: gender || undefined,
+          blood_type: blood_type || undefined,
+          primary_condition: primary_condition.trim(),
+          status: status || 'Stable',
+          smoking_status: smoking_status || undefined,
+          allergies: allergies || undefined,
+          medications: medications || undefined,
+          last_visit: today,
+        },
+        { new: true, upsert: true, setDefaultsOnInsert: true }
+      );
+
+      await Connection.findOneAndUpdate(
+        { doctorId, patientId: matchedPatientUser._id },
+        {
+          doctorId,
+          patientId: matchedPatientUser._id,
+          status: 'APPROVED',
+          initiatedBy: doctorId,
+        },
+        { new: true, upsert: true, setDefaultsOnInsert: true }
+      );
+    } else {
+      patient = await DoctorPatient.create({
+        doctorId: doctorId || undefined,
+        name: cleanName,
+        age: ageNum,
+        gender: gender || undefined,
+        blood_type: blood_type || undefined,
+        primary_condition: primary_condition.trim(),
+        status: status || 'Stable',
+        smoking_status: smoking_status || undefined,
+        allergies: allergies || undefined,
+        medications: medications || undefined,
+        last_visit: today,
+      });
+    }
+
+    res.status(201).json({
+      id: patient._id,
+      ...patient.toObject(),
+      matchedPatientInDb: Boolean(matchedPatientUser),
+      matchedPatientName: matchedPatientUser?.name || null,
     });
-    res.status(201).json({ id: patient._id, ...patient.toObject() });
   } catch (err) {
     res.status(500).json({ error: 'Failed to add patient' });
   }
@@ -355,19 +456,25 @@ router.get('/sources', async (req, res) => {
     const patientIds = (await DoctorPatient.find(dFilter).select('_id')).map(p => p._id);
     const pFilter = patientIds.length ? { patient_id: { $in: patientIds } } : {};
 
-    const [ehr, wearable, labs, imaging] = await Promise.all([
+    const unmatchedFilter = doctorId ? { doctorId } : {};
+
+    const [ehr, wearable, labs, imaging, unmatchedEhr, unmatchedLabs, unmatchedImaging, unmatchedWearable] = await Promise.all([
       Vital.countDocuments({ ...pFilter, source: 'EHR' }),
       Vital.countDocuments({ ...pFilter, source: 'Wearable' }),
       LabResult.countDocuments(pFilter),
       Imaging.countDocuments(pFilter),
+      UnmatchedSourceUpload.countDocuments({ ...unmatchedFilter, sourceType: 'EHR' }),
+      UnmatchedSourceUpload.countDocuments({ ...unmatchedFilter, sourceType: 'Lab' }),
+      UnmatchedSourceUpload.countDocuments({ ...unmatchedFilter, sourceType: 'Radiology' }),
+      UnmatchedSourceUpload.countDocuments({ ...unmatchedFilter, sourceType: 'Wearable' }),
     ]);
 
     res.json({
       sources: [
-        { name: 'Electronic Health Records', type: 'EHR', count: ehr, status: 'Connected' },
-        { name: 'Laboratory Systems', type: 'Lab', count: labs, status: 'Connected' },
-        { name: 'Radiology / Imaging', type: 'Radiology', count: imaging, status: 'Connected' },
-        { name: 'Wearable Devices', type: 'Wearable', count: wearable, status: 'Connected' },
+        { name: 'Electronic Health Records', type: 'EHR', count: ehr + unmatchedEhr, status: 'Connected' },
+        { name: 'Laboratory Systems', type: 'Lab', count: labs + unmatchedLabs, status: 'Connected' },
+        { name: 'Radiology / Imaging', type: 'Radiology', count: imaging + unmatchedImaging, status: 'Connected' },
+        { name: 'Wearable Devices', type: 'Wearable', count: wearable + unmatchedWearable, status: 'Connected' },
       ]
     });
   } catch (err) {
@@ -378,12 +485,27 @@ router.get('/sources', async (req, res) => {
 // --- Source Detail Records ---
 router.get('/sources/ehr', async (req, res) => {
   try {
+    const doctorId = getDoctorId(req);
     const rows = await Vital.find({ source: 'EHR' }).sort({ recorded_at: -1 });
     const pIds = [...new Set(rows.map(r => r.patient_id.toString()))];
     const patients = await DoctorPatient.find({ _id: { $in: pIds } }).select('name');
     const nameMap = {};
     patients.forEach(p => { nameMap[p._id.toString()] = p.name; });
-    res.json(rows.map(r => ({ ...r.toObject(), id: r._id, patient_name: nameMap[r.patient_id.toString()] || 'Unknown' })));
+    const matched = rows.map(r => ({ ...r.toObject(), id: r._id, notInDb: false, patient_name: nameMap[r.patient_id.toString()] || 'Unknown' }));
+    const unmatchedRows = await UnmatchedSourceUpload.find({ ...(doctorId ? { doctorId } : {}), sourceType: 'EHR' }).sort({ recorded_at: -1, createdAt: -1 });
+    const unmatched = unmatchedRows.map((u) => ({
+      id: u._id,
+      patient_name: `${u.patientName} (not in db)`,
+      notInDb: true,
+      heart_rate: u.payload?.heart_rate,
+      systolic: u.payload?.systolic,
+      diastolic: u.payload?.diastolic,
+      spo2: u.payload?.spo2,
+      temperature: u.payload?.temperature,
+      resp_rate: u.payload?.resp_rate,
+      recorded_at: u.recorded_at || u.createdAt,
+    }));
+    res.json([...matched, ...unmatched].sort((a, b) => new Date(b.recorded_at || b.createdAt || 0) - new Date(a.recorded_at || a.createdAt || 0)));
   } catch (err) {
     res.status(500).json({ error: 'Failed' });
   }
@@ -391,12 +513,27 @@ router.get('/sources/ehr', async (req, res) => {
 
 router.get('/sources/lab', async (req, res) => {
   try {
+    const doctorId = getDoctorId(req);
     const rows = await LabResult.find().sort({ recorded_at: -1 });
     const pIds = [...new Set(rows.map(r => r.patient_id.toString()))];
     const patients = await DoctorPatient.find({ _id: { $in: pIds } }).select('name');
     const nameMap = {};
     patients.forEach(p => { nameMap[p._id.toString()] = p.name; });
-    res.json(rows.map(r => ({ ...r.toObject(), id: r._id, patient_name: nameMap[r.patient_id.toString()] || 'Unknown' })));
+    const matched = rows.map(r => ({ ...r.toObject(), id: r._id, notInDb: false, patient_name: nameMap[r.patient_id.toString()] || 'Unknown' }));
+    const unmatchedRows = await UnmatchedSourceUpload.find({ ...(doctorId ? { doctorId } : {}), sourceType: 'Lab' }).sort({ recorded_at: -1, createdAt: -1 });
+    const unmatched = unmatchedRows.map((u) => ({
+      id: u._id,
+      patient_name: `${u.patientName} (not in db)`,
+      notInDb: true,
+      test_name: u.payload?.test_name,
+      value: u.payload?.value,
+      unit: u.payload?.unit,
+      ref_low: u.payload?.ref_low,
+      ref_high: u.payload?.ref_high,
+      flag: u.payload?.flag || 'normal',
+      recorded_at: u.recorded_at || u.createdAt,
+    }));
+    res.json([...matched, ...unmatched].sort((a, b) => new Date(b.recorded_at || b.createdAt || 0) - new Date(a.recorded_at || a.createdAt || 0)));
   } catch (err) {
     res.status(500).json({ error: 'Failed' });
   }
@@ -404,12 +541,26 @@ router.get('/sources/lab', async (req, res) => {
 
 router.get('/sources/radiology', async (req, res) => {
   try {
+    const doctorId = getDoctorId(req);
     const rows = await Imaging.find().sort({ recorded_at: -1 });
     const pIds = [...new Set(rows.map(r => r.patient_id.toString()))];
     const patients = await DoctorPatient.find({ _id: { $in: pIds } }).select('name');
     const nameMap = {};
     patients.forEach(p => { nameMap[p._id.toString()] = p.name; });
-    res.json(rows.map(r => ({ ...r.toObject(), id: r._id, patient_name: nameMap[r.patient_id.toString()] || 'Unknown' })));
+    const matched = rows.map(r => ({ ...r.toObject(), id: r._id, notInDb: false, patient_name: nameMap[r.patient_id.toString()] || 'Unknown' }));
+    const unmatchedRows = await UnmatchedSourceUpload.find({ ...(doctorId ? { doctorId } : {}), sourceType: 'Radiology' }).sort({ recorded_at: -1, createdAt: -1 });
+    const unmatched = unmatchedRows.map((u) => ({
+      id: u._id,
+      patient_name: `${u.patientName} (not in db)`,
+      notInDb: true,
+      modality: u.payload?.modality,
+      body_part: u.payload?.body_part,
+      finding: u.payload?.finding,
+      impression: u.payload?.impression,
+      status: u.payload?.status || 'Final',
+      recorded_at: u.recorded_at || u.createdAt,
+    }));
+    res.json([...matched, ...unmatched].sort((a, b) => new Date(b.recorded_at || b.createdAt || 0) - new Date(a.recorded_at || a.createdAt || 0)));
   } catch (err) {
     res.status(500).json({ error: 'Failed' });
   }
@@ -417,12 +568,23 @@ router.get('/sources/radiology', async (req, res) => {
 
 router.get('/sources/wearable', async (req, res) => {
   try {
+    const doctorId = getDoctorId(req);
     const rows = await WearableData.find().sort({ recorded_at: -1 });
     const pIds = [...new Set(rows.map(r => r.patient_id.toString()))];
     const patients = await DoctorPatient.find({ _id: { $in: pIds } }).select('name');
     const nameMap = {};
     patients.forEach(p => { nameMap[p._id.toString()] = p.name; });
-    res.json(rows.map(r => ({ ...r.toObject(), id: r._id, patient_name: nameMap[r.patient_id.toString()] || 'Unknown' })));
+    const matched = rows.map(r => ({ ...r.toObject(), id: r._id, notInDb: false, patient_name: nameMap[r.patient_id.toString()] || 'Unknown' }));
+    const unmatchedRows = await UnmatchedSourceUpload.find({ ...(doctorId ? { doctorId } : {}), sourceType: 'Wearable' }).sort({ recorded_at: -1, createdAt: -1 });
+    const unmatched = unmatchedRows.map((u) => ({
+      id: u._id,
+      patient_name: `${u.patientName} (not in db)`,
+      notInDb: true,
+      metric: u.payload?.metric,
+      value: u.payload?.value,
+      recorded_at: u.recorded_at || u.createdAt,
+    }));
+    res.json([...matched, ...unmatched].sort((a, b) => new Date(b.recorded_at || b.createdAt || 0) - new Date(a.recorded_at || a.createdAt || 0)));
   } catch (err) {
     res.status(500).json({ error: 'Failed' });
   }
@@ -431,12 +593,44 @@ router.get('/sources/wearable', async (req, res) => {
 // --- Add Source Records ---
 router.post('/sources/ehr', async (req, res) => {
   try {
-    const { patient_id, heart_rate, systolic, diastolic, spo2, temperature, resp_rate } = req.body;
-    if (!patient_id) return res.status(400).json({ error: 'Patient is required' });
-    if (!mongoose.Types.ObjectId.isValid(patient_id)) return res.status(400).json({ error: 'Invalid patient ID' });
-    if (!(await DoctorPatient.exists({ _id: patient_id }))) return res.status(404).json({ error: 'Patient not found' });
-    await Vital.create({ patient_id, source: 'EHR', heart_rate, systolic, diastolic, spo2, temperature, resp_rate });
-    res.status(201).json({ ok: true });
+    const doctorId = getDoctorId(req);
+    const { patient_id, patient_name, heart_rate, systolic, diastolic, spo2, temperature, resp_rate } = req.body;
+    const row = await resolveDoctorPatient({ doctorId, patient_id, patient_name });
+
+    if (!row) {
+      const fallbackName = normalizeName(patient_name);
+      if (!fallbackName) return res.status(400).json({ error: 'Patient is required' });
+      await UnmatchedSourceUpload.create({
+        doctorId: doctorId || undefined,
+        sourceType: 'EHR',
+        patientName: fallbackName,
+        payload: { heart_rate, systolic, diastolic, spo2, temperature, resp_rate },
+      });
+      return res.status(202).json({ ok: true, unmatched: true, patient_name: `${fallbackName} (not in db)` });
+    }
+
+    const vital = await Vital.create({
+      patient_id: row._id,
+      source: 'EHR',
+      heart_rate,
+      systolic,
+      diastolic,
+      spo2,
+      temperature,
+      resp_rate,
+    });
+
+    const linkedPatientId = await resolvePatientUserId(row, patient_name);
+    await addMetricEntries(linkedPatientId, [
+      { metricKey: 'heart_rate', metricLabel: 'Heart Rate', value: heart_rate, unit: 'bpm', recordedAt: vital.recorded_at, source: 'DOCTOR_EHR' },
+      { metricKey: 'systolic_bp', metricLabel: 'Systolic BP', value: systolic, unit: 'mmHg', recordedAt: vital.recorded_at, source: 'DOCTOR_EHR' },
+      { metricKey: 'diastolic_bp', metricLabel: 'Diastolic BP', value: diastolic, unit: 'mmHg', recordedAt: vital.recorded_at, source: 'DOCTOR_EHR' },
+      { metricKey: 'spo2', metricLabel: 'SpO₂', value: spo2, unit: '%', recordedAt: vital.recorded_at, source: 'DOCTOR_EHR' },
+      { metricKey: 'temperature', metricLabel: 'Temperature', value: temperature, unit: '°F', recordedAt: vital.recorded_at, source: 'DOCTOR_EHR' },
+      { metricKey: 'resp_rate', metricLabel: 'Respiratory Rate', value: resp_rate, unit: '/min', recordedAt: vital.recorded_at, source: 'DOCTOR_EHR' },
+    ]);
+
+    res.status(201).json({ ok: true, linkedToPatient: Boolean(linkedPatientId) });
   } catch (err) {
     res.status(500).json({ error: 'Failed' });
   }
@@ -444,12 +638,37 @@ router.post('/sources/ehr', async (req, res) => {
 
 router.post('/sources/lab', async (req, res) => {
   try {
-    const { patient_id, test_name, value, unit, ref_low, ref_high, flag } = req.body;
-    if (!patient_id || !test_name) return res.status(400).json({ error: 'Patient and test name are required' });
-    if (!mongoose.Types.ObjectId.isValid(patient_id)) return res.status(400).json({ error: 'Invalid patient ID' });
-    if (!(await DoctorPatient.exists({ _id: patient_id }))) return res.status(404).json({ error: 'Patient not found' });
-    await LabResult.create({ patient_id, test_name: test_name.trim(), value, unit, ref_low, ref_high, flag: flag || 'normal' });
-    res.status(201).json({ ok: true });
+    const doctorId = getDoctorId(req);
+    const { patient_id, patient_name, test_name, value, unit, ref_low, ref_high, flag } = req.body;
+    if (!test_name) return res.status(400).json({ error: 'Test name is required' });
+
+    const row = await resolveDoctorPatient({ doctorId, patient_id, patient_name });
+    if (!row) {
+      const fallbackName = normalizeName(patient_name);
+      if (!fallbackName) return res.status(400).json({ error: 'Patient is required' });
+      await UnmatchedSourceUpload.create({
+        doctorId: doctorId || undefined,
+        sourceType: 'Lab',
+        patientName: fallbackName,
+        payload: { test_name: test_name.trim(), value, unit, ref_low, ref_high, flag: flag || 'normal' },
+      });
+      return res.status(202).json({ ok: true, unmatched: true, patient_name: `${fallbackName} (not in db)` });
+    }
+
+    const lab = await LabResult.create({ patient_id: row._id, test_name: test_name.trim(), value, unit, ref_low, ref_high, flag: flag || 'normal' });
+    const linkedPatientId = await resolvePatientUserId(row, patient_name);
+    await addMetricEntries(linkedPatientId, [
+      {
+        metricKey: `lab_${slugifyMetricKey(test_name)}`,
+        metricLabel: test_name.trim(),
+        value,
+        unit: unit || '',
+        recordedAt: lab.recorded_at,
+        source: 'DOCTOR_LAB',
+      },
+    ]);
+
+    res.status(201).json({ ok: true, linkedToPatient: Boolean(linkedPatientId) });
   } catch (err) {
     res.status(500).json({ error: 'Failed' });
   }
@@ -457,12 +676,27 @@ router.post('/sources/lab', async (req, res) => {
 
 router.post('/sources/radiology', async (req, res) => {
   try {
-    const { patient_id, modality, body_part, finding, impression, status } = req.body;
-    if (!patient_id || !modality) return res.status(400).json({ error: 'Patient and modality are required' });
-    if (!mongoose.Types.ObjectId.isValid(patient_id)) return res.status(400).json({ error: 'Invalid patient ID' });
-    if (!(await DoctorPatient.exists({ _id: patient_id }))) return res.status(404).json({ error: 'Patient not found' });
-    await Imaging.create({ patient_id, modality: modality.trim(), body_part, finding, impression, status: status || 'Final' });
-    res.status(201).json({ ok: true });
+    const doctorId = getDoctorId(req);
+    const { patient_id, patient_name, modality, body_part, finding, impression, status } = req.body;
+    if (!modality) return res.status(400).json({ error: 'Modality is required' });
+
+    const row = await resolveDoctorPatient({ doctorId, patient_id, patient_name });
+    if (!row) {
+      const fallbackName = normalizeName(patient_name);
+      if (!fallbackName) return res.status(400).json({ error: 'Patient is required' });
+      await UnmatchedSourceUpload.create({
+        doctorId: doctorId || undefined,
+        sourceType: 'Radiology',
+        patientName: fallbackName,
+        payload: { modality: modality.trim(), body_part, finding, impression, status: status || 'Final' },
+      });
+      return res.status(202).json({ ok: true, unmatched: true, patient_name: `${fallbackName} (not in db)` });
+    }
+
+    await Imaging.create({ patient_id: row._id, modality: modality.trim(), body_part, finding, impression, status: status || 'Final' });
+    const linkedPatientId = await resolvePatientUserId(row, patient_name);
+
+    res.status(201).json({ ok: true, linkedToPatient: Boolean(linkedPatientId) });
   } catch (err) {
     res.status(500).json({ error: 'Failed' });
   }
@@ -470,12 +704,37 @@ router.post('/sources/radiology', async (req, res) => {
 
 router.post('/sources/wearable', async (req, res) => {
   try {
-    const { patient_id, metric, value } = req.body;
-    if (!patient_id || !metric || value == null) return res.status(400).json({ error: 'Patient, metric, and value are required' });
-    if (!mongoose.Types.ObjectId.isValid(patient_id)) return res.status(400).json({ error: 'Invalid patient ID' });
-    if (!(await DoctorPatient.exists({ _id: patient_id }))) return res.status(404).json({ error: 'Patient not found' });
-    await WearableData.create({ patient_id, metric: metric.trim(), value: Number(value) });
-    res.status(201).json({ ok: true });
+    const doctorId = getDoctorId(req);
+    const { patient_id, patient_name, metric, value } = req.body;
+    if (!metric || value == null) return res.status(400).json({ error: 'Metric and value are required' });
+
+    const row = await resolveDoctorPatient({ doctorId, patient_id, patient_name });
+    if (!row) {
+      const fallbackName = normalizeName(patient_name);
+      if (!fallbackName) return res.status(400).json({ error: 'Patient is required' });
+      await UnmatchedSourceUpload.create({
+        doctorId: doctorId || undefined,
+        sourceType: 'Wearable',
+        patientName: fallbackName,
+        payload: { metric: metric.trim(), value },
+      });
+      return res.status(202).json({ ok: true, unmatched: true, patient_name: `${fallbackName} (not in db)` });
+    }
+
+    const wearable = await WearableData.create({ patient_id: row._id, metric: metric.trim(), value: Number(value) });
+    const linkedPatientId = await resolvePatientUserId(row, patient_name);
+    await addMetricEntries(linkedPatientId, [
+      {
+        metricKey: `wearable_${slugifyMetricKey(metric)}`,
+        metricLabel: `Wearable: ${metric.trim()}`,
+        value: Number(value),
+        unit: '',
+        recordedAt: wearable.recorded_at,
+        source: 'DOCTOR_WEARABLE',
+      },
+    ]);
+
+    res.status(201).json({ ok: true, linkedToPatient: Boolean(linkedPatientId) });
   } catch (err) {
     res.status(500).json({ error: 'Failed' });
   }

@@ -13,9 +13,13 @@ const prescriptionSchema = new mongoose.Schema({
   type: { type: String, enum: ['NEW', 'OLD'], required: true },
   verificationStatus: { 
     type: String, 
-    enum: ['UNVERIFIED', 'PENDING_DOCTOR', 'VERIFIED'],
+    enum: ['UNVERIFIED', 'PENDING_DOCTOR', 'VERIFIED', 'REJECTED', 'CORRECTED'],
     default: 'UNVERIFIED'
   },
+
+  correctedOcrData: { type: Object },
+  verificationNote: { type: String },
+  reviewedAt: { type: Date },
   
   rawOcrData: { type: Object }
 }, { timestamps: true });

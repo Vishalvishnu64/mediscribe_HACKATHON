@@ -7,9 +7,13 @@ const userSchema = new mongoose.Schema({
   passwordHash: { type: String, required: true },
   
   // Doctor specific
+  phone: { type: String },
   registrationNumber: { type: String },
+  stateMedicalCouncil: { type: String },
   hospital: { type: String },
   specialization: { type: String },
+  qualificationInstitution: { type: String },
+  hospitalsVisited: { type: String },
   qualifications: { type: String },
   experienceYears: { type: Number },
   clinicAddress: { type: String },
