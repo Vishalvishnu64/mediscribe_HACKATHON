@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Layout from '../../components/Layout';
-import { Pill, CheckCircle2, Clock, Loader2, Calendar, Pencil, X, Save, User, Plus, Trash2 } from 'lucide-react';
+import { Pill, CheckCircle2, Clock, Loader2, Calendar, Pencil, X, Save, User, Plus, Trash2, Camera } from 'lucide-react';
 
 const ActiveMeds = () => {
   const [medications, setMedications] = useState([]);
@@ -11,6 +11,8 @@ const ActiveMeds = () => {
   const [editingTimesId, setEditingTimesId] = useState(null);
   const [timesInput, setTimesInput] = useState([]);
   const [newTime, setNewTime] = useState('08:00');
+  const [editingEndDateId, setEditingEndDateId] = useState(null);
+  const [endDateInput, setEndDateInput] = useState('');
 
   useEffect(() => {
     fetchMeds();
@@ -116,6 +118,66 @@ const ActiveMeds = () => {
     }
   };
 
+  const toDateInputValue = (value) => {
+    if (!value) return '';
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return '';
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  };
+
+  const startEditingEndDate = (med) => {
+    setEditingEndDateId(med._id);
+    setEndDateInput(toDateInputValue(med.endDate));
+  };
+
+  const cancelEditingEndDate = () => {
+    setEditingEndDateId(null);
+    setEndDateInput('');
+  };
+
+  const saveEndDate = async (id) => {
+    try {
+      const payload = { endDate: endDateInput || null };
+      const res = await axios.put(`/medications/${id}`, payload);
+      if (res.data.status === 'HISTORY') {
+        setMedications(prev => prev.filter(m => m._id !== id));
+      } else {
+        setMedications(prev => prev.map(m => m._id === id ? res.data : m));
+      }
+      setEditingEndDateId(null);
+      setEndDateInput('');
+    } catch (err) {
+      console.error('Save end date error:', err.response?.data || err.message);
+      alert('Failed to save end date: ' + (err.response?.data?.error || err.message));
+    }
+  };
+
+  const uploadLocationImage = async (id, file) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        const res = await axios.put(`/medications/${id}`, { locationImage: String(reader.result || '') });
+        setMedications(prev => prev.map(m => m._id === id ? res.data : m));
+      } catch (err) {
+        console.error('Upload location image error:', err.response?.data || err.message);
+        alert('Failed to upload image: ' + (err.response?.data?.error || err.message));
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const removeLocationImage = async (id) => {
+    try {
+      const res = await axios.put(`/medications/${id}`, { locationImage: '' });
+      setMedications(prev => prev.map(m => m._id === id ? res.data : m));
+    } catch (err) {
+      console.error('Remove location image error:', err.response?.data || err.message);
+      alert('Failed to remove image: ' + (err.response?.data?.error || err.message));
+    }
+  };
+
   return (
     <Layout title="Active Medications" subtitle="Medications you are currently taking based on your prescriptions.">
       
@@ -132,30 +194,30 @@ const ActiveMeds = () => {
           <p className="text-slate-500 font-medium">Upload a new prescription to automatically add active medications here.</p>
         </div>
       ) : (
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-3">
           {medications.map((med) => (
-            <div key={med._id} className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm hover:border-emerald-200 transition-colors">
+            <div key={med._id} className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm hover:border-emerald-200 transition-colors">
               {/* Top row: Name + Action buttons */}
-              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-                <div className="flex items-center gap-4">
-                  <div className="w-14 h-14 bg-emerald-50 text-primary rounded-2xl flex items-center justify-center shrink-0">
-                    <Pill size={28} />
+              <div className="flex flex-col lg:flex-row items-start justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-11 h-11 bg-emerald-50 text-primary rounded-xl flex items-center justify-center shrink-0">
+                    <Pill size={22} />
                   </div>
-                  <div>
-                    <h3 className="text-lg font-bold text-slate-800">{med.name}</h3>
-                    <div className="flex flex-wrap gap-2 mt-1.5">
+                  <div className="min-w-0">
+                    <h3 className="text-base font-bold text-slate-800 truncate">{med.name}</h3>
+                    <div className="flex flex-wrap gap-1.5 mt-1">
                       {med.dosage && (
-                        <span className="bg-slate-100 text-slate-600 font-semibold text-xs px-2.5 py-1 rounded-lg">
+                        <span className="bg-slate-100 text-slate-600 font-semibold text-[11px] px-2 py-0.5 rounded-md">
                           {med.dosage}
                         </span>
                       )}
                       {med.frequency && (
-                        <span className="bg-blue-50 text-blue-600 font-semibold text-xs px-2.5 py-1 rounded-lg">
+                        <span className="bg-blue-50 text-blue-600 font-semibold text-[11px] px-2 py-0.5 rounded-md">
                           {med.frequency}
                         </span>
                       )}
                       {med.duration && (
-                        <span className="bg-orange-50 text-orange-600 font-semibold text-xs px-2.5 py-1 rounded-lg">
+                        <span className="bg-orange-50 text-orange-600 font-semibold text-[11px] px-2 py-0.5 rounded-md">
                           {med.duration}
                         </span>
                       )}
@@ -163,26 +225,62 @@ const ActiveMeds = () => {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3">
-                  {isTimeToTake(med) ? (
-                    <button
-                      onClick={() => markComplete(med._id)}
-                      className="flex items-center gap-1.5 bg-emerald-50 text-emerald-700 font-bold text-sm px-4 py-2 rounded-xl hover:bg-emerald-100 transition-colors border border-emerald-200"
-                    >
-                      <CheckCircle2 size={16} /> Done
-                    </button>
-                  ) : (
-                    <span className="flex items-center gap-1.5 bg-slate-50 text-slate-400 font-bold text-sm px-4 py-2 rounded-xl border border-slate-200 cursor-not-allowed">
-                      <Clock size={16} /> Not yet
-                    </span>
-                  )}
+                <div className="w-full lg:w-auto flex items-start gap-3">
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-1.5 w-[132px] shrink-0">
+                    {med.locationImage ? (
+                      <img
+                        src={med.locationImage}
+                        alt={`Storage for ${med.name}`}
+                        className="w-full h-20 object-cover rounded-md border border-slate-200"
+                      />
+                    ) : (
+                      <div className="w-full h-20 rounded-md border border-dashed border-slate-300 flex items-center justify-center text-slate-400 text-[11px] font-semibold text-center px-2">
+                        No location photo
+                      </div>
+                    )}
+                    <div className="mt-1.5 flex items-center gap-1.5">
+                      <label className="cursor-pointer flex-1 inline-flex items-center justify-center gap-1 bg-blue-50 text-blue-700 border border-blue-200 rounded-md px-1.5 py-1 text-[11px] font-bold hover:bg-blue-100">
+                        <Camera size={12} /> {med.locationImage ? 'Change' : 'Add'}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => uploadLocationImage(med._id, e.target.files?.[0])}
+                        />
+                      </label>
+                      {med.locationImage && (
+                        <button
+                          onClick={() => removeLocationImage(med._id)}
+                          className="inline-flex items-center justify-center bg-rose-50 text-rose-700 border border-rose-200 rounded-md p-1.5 hover:bg-rose-100"
+                          title="Remove photo"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-0.5">
+                    {isTimeToTake(med) ? (
+                      <button
+                        onClick={() => markComplete(med._id)}
+                        className="flex items-center gap-1 bg-emerald-50 text-emerald-700 font-bold text-xs px-3 py-2 rounded-lg hover:bg-emerald-100 transition-colors border border-emerald-200"
+                      >
+                        <CheckCircle2 size={14} /> Done
+                      </button>
+                    ) : (
+                      <span className="flex items-center gap-1 bg-slate-50 text-slate-400 font-bold text-xs px-3 py-2 rounded-lg border border-slate-200 cursor-not-allowed">
+                        <Clock size={14} /> Not yet
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
 
               {/* Details row */}
-              <div className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="mt-3 pt-3 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 {/* Reminder Times - editable */}
-                <div className="flex flex-col gap-1 sm:col-span-2 lg:col-span-1">
+                <div className="flex flex-col gap-1 sm:col-span-2 lg:col-span-2">
                   <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1">
                     Reminder Times
                     {editingTimesId !== med._id && (
@@ -193,41 +291,41 @@ const ActiveMeds = () => {
                   </span>
                   {editingTimesId === med._id ? (
                     <div className="flex flex-col gap-2">
-                      <div className="flex flex-wrap gap-2">
+                      <div className="flex flex-wrap gap-1.5">
                         {timesInput.map((t, i) => (
-                          <span key={i} className="flex items-center gap-1 bg-violet-50 border border-violet-200 text-violet-700 font-bold text-sm px-3 py-1.5 rounded-xl">
-                            <Clock size={14} /> {t}
+                          <span key={i} className="flex items-center gap-1 bg-violet-50 border border-violet-200 text-violet-700 font-bold text-xs px-2 py-1 rounded-lg">
+                            <Clock size={12} /> {t}
                             <button onClick={() => removeTime(t)} className="text-violet-400 hover:text-red-500 ml-1" title="Remove">
                               <Trash2 size={12} />
                             </button>
                           </span>
                         ))}
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1.5">
                         <input
                           type="time"
                           value={newTime}
                           onChange={(e) => setNewTime(e.target.value)}
-                          className="text-sm border border-slate-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-violet-300 focus:border-violet-400"
+                          className="text-xs border border-slate-300 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-violet-300 focus:border-violet-400"
                         />
-                        <button onClick={addTime} className="text-violet-600 hover:text-violet-700 bg-violet-50 border border-violet-200 p-1.5 rounded-lg" title="Add time">
-                          <Plus size={16} />
+                        <button onClick={addTime} className="text-violet-600 hover:text-violet-700 bg-violet-50 border border-violet-200 p-1.5 rounded-md" title="Add time">
+                          <Plus size={14} />
                         </button>
                       </div>
                       <div className="flex gap-2">
-                        <button onClick={() => saveReminderTimes(med._id)} className="flex items-center gap-1 text-emerald-600 hover:text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-lg text-sm font-semibold">
-                          <Save size={14} /> Save
+                        <button onClick={() => saveReminderTimes(med._id)} className="flex items-center gap-1 text-emerald-600 hover:text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-md text-xs font-semibold">
+                          <Save size={12} /> Save
                         </button>
-                        <button onClick={cancelEditingTimes} className="flex items-center gap-1 text-slate-400 hover:text-slate-600 bg-slate-50 border border-slate-200 px-3 py-1 rounded-lg text-sm font-semibold">
-                          <X size={14} /> Cancel
+                        <button onClick={cancelEditingTimes} className="flex items-center gap-1 text-slate-400 hover:text-slate-600 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-md text-xs font-semibold">
+                          <X size={12} /> Cancel
                         </button>
                       </div>
                     </div>
                   ) : med.reminderTimes?.length > 0 ? (
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-wrap gap-1.5">
                       {med.reminderTimes.map((t, i) => (
-                        <span key={i} className="flex items-center gap-1 bg-violet-50 border border-violet-200 text-violet-700 font-bold text-sm px-3 py-1.5 rounded-xl">
-                          <Clock size={14} /> {t}
+                        <span key={i} className="flex items-center gap-1 bg-violet-50 border border-violet-200 text-violet-700 font-bold text-xs px-2 py-1 rounded-lg">
+                          <Clock size={12} /> {t}
                         </span>
                       ))}
                     </div>
@@ -247,11 +345,37 @@ const ActiveMeds = () => {
 
                 {/* End Date */}
                 <div className="flex flex-col gap-1">
-                  <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Ends</span>
-                  <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-700">
-                    <Calendar size={14} className="text-slate-400" />
-                    {formatDate(med.endDate) || 'Ongoing'}
+                  <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1">
+                    Ends
+                    {editingEndDateId !== med._id && (
+                      <button onClick={() => startEditingEndDate(med)} className="text-slate-400 hover:text-orange-600 p-0.5" title="Edit end date">
+                        <Pencil size={12} />
+                      </button>
+                    )}
                   </span>
+                  {editingEndDateId === med._id ? (
+                    <div className="flex flex-col gap-2">
+                      <input
+                        type="date"
+                        value={endDateInput}
+                        onChange={(e) => setEndDateInput(e.target.value)}
+                        className="text-xs border border-slate-300 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-400"
+                      />
+                      <div className="flex gap-2">
+                        <button onClick={() => saveEndDate(med._id)} className="flex items-center gap-1 text-emerald-600 hover:text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-md text-xs font-semibold">
+                          <Save size={12} /> Save
+                        </button>
+                        <button onClick={cancelEditingEndDate} className="flex items-center gap-1 text-slate-400 hover:text-slate-600 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-md text-xs font-semibold">
+                          <X size={12} /> Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-700">
+                      <Calendar size={14} className="text-slate-400" />
+                      {formatDate(med.endDate) || 'Ongoing'}
+                    </span>
+                  )}
                 </div>
 
                 {/* Doctor Name - editable */}
@@ -264,7 +388,7 @@ const ActiveMeds = () => {
                         value={doctorNameInput}
                         onChange={(e) => setDoctorNameInput(e.target.value)}
                         placeholder="Doctor's name"
-                        className="text-sm border border-slate-300 rounded-lg px-2.5 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-emerald-300 focus:border-emerald-400"
+                        className="text-xs border border-slate-300 rounded-md px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-emerald-300 focus:border-emerald-400"
                         autoFocus
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') saveDoctorName(med._id);
@@ -290,6 +414,7 @@ const ActiveMeds = () => {
                     </div>
                   )}
                 </div>
+
               </div>
             </div>
           ))}

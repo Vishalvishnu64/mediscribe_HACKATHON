@@ -10,6 +10,7 @@ import UploadPrescription from './pages/patient/UploadPrescription';
 import ActiveMeds from './pages/patient/ActiveMeds';
 import MedicalHistory from './pages/patient/MedicalHistory';
 import Reminders from './pages/patient/Reminders';
+import Settings from './pages/patient/Settings';
 import DoctorDashboard from './pages/doctor/DoctorDashboard';
 import NomineeSubscribe from './pages/NomineeSubscribe';
 
@@ -30,6 +31,7 @@ function App() {
             <Route path="/patient/medications" element={<ActiveMeds />} />
             <Route path="/patient/reminders" element={<Reminders />} />
             <Route path="/patient/history" element={<MedicalHistory />} />
+            <Route path="/patient/settings" element={<Settings />} />
           </Route>
 
           {/* Doctor Routes */}

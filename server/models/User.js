@@ -25,6 +25,11 @@ const userSchema = new mongoose.Schema({
     phone: { type: String },
     pushSubscription: { type: Object }
   },
+
+  settings: {
+    darkMode: { type: Boolean, default: false },
+    fontSize: { type: String, enum: ['small', 'medium', 'large'], default: 'medium' }
+  },
   
   profilePic: { type: String },
   pushSubscription: { type: Object } // Added Web Push Token

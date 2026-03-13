@@ -13,3 +13,48 @@
 body {
   @apply bg-slate-50 text-slate-900;
 }
+
+html, body, #root {
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* App-wide dark mode overrides */
+html.dark-mode body {
+  background: #020617;
+  color: #e2e8f0;
+}
+
+html.dark-mode .bg-white,
+html.dark-mode .bg-white\/95 {
+  background-color: #0f172a !important;
+}
+
+html.dark-mode .bg-slate-50 {
+  background-color: #111827 !important;
+}
+
+html.dark-mode .border-slate-200,
+html.dark-mode .border-slate-100,
+html.dark-mode .border-slate-300 {
+  border-color: #334155 !important;
+}
+
+html.dark-mode .text-slate-900,
+html.dark-mode .text-slate-800,
+html.dark-mode .text-slate-700 {
+  color: #e2e8f0 !important;
+}
+
+html.dark-mode .text-slate-600,
+html.dark-mode .text-slate-500,
+html.dark-mode .text-slate-400 {
+  color: #94a3b8 !important;
+}
+
+html.dark-mode input,
+html.dark-mode select,
+html.dark-mode textarea {
+  background-color: #0b1220 !important;
+  color: #e2e8f0 !important;
+  border-color: #334155 !important;
+}

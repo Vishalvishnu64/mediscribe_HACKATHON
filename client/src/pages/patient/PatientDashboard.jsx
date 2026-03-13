@@ -9,8 +9,8 @@ import {
   Clock, 
   UploadCloud, 
   CheckCircle2,
-  AlertCircle,
-  Loader2
+  Loader2,
+  ChevronRight
 } from 'lucide-react';
 
 const PatientDashboard = () => {
@@ -44,6 +44,22 @@ const PatientDashboard = () => {
   const totalReminders = activeMeds.reduce((sum, m) => sum + (m.reminderTimes?.length || 0), 0);
   const completedCount = allMeds.filter(m => m.status === 'COMPLETED').length;
   const adherenceRate = allMeds.length > 0 ? Math.round((completedCount / allMeds.length) * 100) : 0;
+
+  const nowMinutes = new Date().getHours() * 60 + new Date().getMinutes();
+  const upcomingReminders = activeMeds
+    .flatMap((med) => (med.reminderTimes || []).map((t) => ({
+      medName: med.name,
+      time: t,
+      dosage: med.dosage || ''
+    })))
+    .map((item) => {
+      const [h, m] = item.time.split(':').map(Number);
+      const mins = h * 60 + m;
+      return { ...item, mins, isPast: mins < nowMinutes };
+    })
+    .sort((a, b) => a.mins - b.mins);
+
+  const nextReminder = upcomingReminders.find((r) => !r.isPast) || null;
 
   const stats = [
     { label: 'Active Medications', value: totalActive, trend: `${totalActive} active`, icon: <Pill size={24} className="text-secondary" /> },
@@ -122,6 +138,32 @@ const PatientDashboard = () => {
               </div>
             )}
           </div>
+
+          {/* Today Reminder Timeline */}
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-xl font-display font-bold text-slate-800">Today's Timeline</h2>
+              <button onClick={() => navigate('/patient/reminders')} className="text-sm font-bold text-primary hover:underline">Manage</button>
+            </div>
+
+            {upcomingReminders.length === 0 ? (
+              <p className="text-slate-500 font-medium text-center py-8 border-2 border-dashed border-slate-200 rounded-2xl">
+                No reminders scheduled yet.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {upcomingReminders.slice(0, 6).map((r, idx) => (
+                  <div key={`${r.medName}-${r.time}-${idx}`} className="flex items-center gap-3">
+                    <div className={`w-2.5 h-2.5 rounded-full ${r.isPast ? 'bg-slate-300' : 'bg-primary'}`}></div>
+                    <p className="text-sm font-semibold text-slate-700 w-14 shrink-0">{r.time}</p>
+                    <p className={`text-sm ${r.isPast ? 'text-slate-400 line-through' : 'text-slate-700'}`}>
+                      {r.medName} {r.dosage ? `(${r.dosage})` : ''}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Right Column: Actions */}
@@ -141,6 +183,28 @@ const PatientDashboard = () => {
             <button className="w-full bg-white text-primary font-bold py-3 rounded-xl hover:bg-emerald-50 transition-colors shadow-sm">
               Scan Document
             </button>
+          </div>
+
+          {/* Next Reminder Snapshot */}
+          <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm">
+            <h3 className="font-display font-bold text-lg text-slate-800 mb-3">Next Reminder</h3>
+            {nextReminder ? (
+              <>
+                <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-3">
+                  <p className="text-xs uppercase font-bold text-amber-700 mb-1">Coming up</p>
+                  <p className="text-lg font-bold text-slate-800">{nextReminder.time}</p>
+                  <p className="text-sm text-slate-600 mt-1">{nextReminder.medName} {nextReminder.dosage ? `• ${nextReminder.dosage}` : ''}</p>
+                </div>
+                <button
+                  onClick={() => navigate('/patient/reminders')}
+                  className="w-full flex items-center justify-center gap-2 bg-slate-100 text-slate-700 font-bold py-2.5 rounded-xl hover:bg-slate-200 transition"
+                >
+                  Open Reminders <ChevronRight size={16} />
+                </button>
+              </>
+            ) : (
+              <p className="text-sm text-slate-500 font-medium">No upcoming reminders today.</p>
+            )}
           </div>
 
         </div>

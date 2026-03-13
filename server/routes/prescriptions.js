@@ -4,6 +4,7 @@ const multer = require('multer');
 const auth = require('../middleware/auth');
 const Prescription = require('../models/Prescription');
 const Medication = require('../models/Medication');
+const TestResult = require('../models/TestResult');
 const { Groq } = require('groq-sdk');
 const fs = require('fs');
 const path = require('path');
@@ -27,7 +28,7 @@ const upload = multer({
 });
 
 // AI Prompt ported from Python logic
-const buildPrompt = () => {
+const buildPrescriptionPrompt = () => {
     return `You are an expert medical prescription reader. Extract ALL information visible and return ONLY a valid JSON object. No markdown.
 {
   "doctor": {
@@ -52,16 +53,43 @@ const buildPrompt = () => {
 }`;
 };
 
+const buildTestResultPrompt = () => {
+  return `You are an expert medical lab report reader. Extract all visible test result details and return ONLY a valid JSON object. No markdown.
+{
+  "report": {
+    "title": "Lab/Diagnostic report title",
+    "date": "Date on report",
+    "labName": "Lab/Hospital name"
+  },
+  "patient": {
+    "name": "Patient full name"
+  },
+  "tests": [
+    {
+      "name": "Test name",
+      "value": "Observed value",
+      "unit": "Unit if available",
+      "referenceRange": "Reference range text",
+      "flag": "high/low/normal if clearly inferable"
+    }
+  ],
+  "summary": "Short summary if present"
+}`;
+};
+
 // UPLOAD PIPELINE
 router.post('/upload', auth, upload.single('prescription'), async (req, res) => {
   try {
-    const { type } = req.body; // 'NEW' or 'OLD'
+    const { type, scanType } = req.body; // scanType: 'PRESCRIPTION' | 'TEST_RESULT'
     const file = req.file;
+    const normalizedScanType = scanType === 'TEST_RESULT' ? 'TEST_RESULT' : 'PRESCRIPTION';
 
-    console.log('[Upload] Received upload request. Type:', type, 'File:', file?.originalname);
+    console.log('[Upload] Received upload request. Type:', type, 'ScanType:', normalizedScanType, 'File:', file?.originalname);
 
     if (!file) return res.status(400).json({ error: 'No image uploaded' });
-    if (!type || !['NEW', 'OLD'].includes(type)) return res.status(400).json({ error: 'Invalid type' });
+    if (normalizedScanType === 'PRESCRIPTION' && (!type || !['NEW', 'OLD'].includes(type))) {
+      return res.status(400).json({ error: 'Invalid type' });
+    }
 
     // Step 1: Read image and format for Groq Vision
     const imageBytes = fs.readFileSync(file.path);
@@ -77,7 +105,7 @@ router.post('/upload', auth, upload.single('prescription'), async (req, res) => 
         {
           role: "user",
           content: [
-            { type: "text", text: buildPrompt() },
+            { type: "text", text: normalizedScanType === 'TEST_RESULT' ? buildTestResultPrompt() : buildPrescriptionPrompt() },
             { type: "image_url", image_url: { url: dataUrl } }
           ]
         }
@@ -88,6 +116,27 @@ router.post('/upload', auth, upload.single('prescription'), async (req, res) => 
     console.log('[Upload] Groq raw response:', rawResponse.substring(0, 300));
     const cleanJSON = rawResponse.replace(/```json/g, '').replace(/```/g, '').trim();
     const extractedData = JSON.parse(cleanJSON);
+
+    if (normalizedScanType === 'TEST_RESULT') {
+      const testResult = new TestResult({
+        patientId: req.user.id,
+        title: extractedData.report?.title || 'Lab Test Result',
+        testDate: extractedData.report?.date ? new Date(extractedData.report.date) : new Date(),
+        imagePath: file.filename,
+        rawOcrData: extractedData,
+      });
+
+      await testResult.save();
+      console.log('[Upload] Test result saved:', testResult._id);
+
+      return res.json({
+        success: true,
+        scanType: 'TEST_RESULT',
+        testResultId: testResult._id,
+        extractedData,
+        testsFound: Array.isArray(extractedData.tests) ? extractedData.tests.length : 0,
+      });
+    }
 
     // Step 3: Create Prescription Record
     const prescription = new Prescription({

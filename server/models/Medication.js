@@ -14,6 +14,7 @@ const medicationSchema = new mongoose.Schema({
   
   reminderTimes: [{ type: String }], // e.g., ["08:00", "20:00"]
   doctorName: { type: String },
+  locationImage: { type: String }, // base64/data URL or image URL for where med is kept
   
   status: { type: String, enum: ['ACTIVE', 'COMPLETED', 'HISTORY'], default: 'ACTIVE' },
   isManual: { type: Boolean, default: false }

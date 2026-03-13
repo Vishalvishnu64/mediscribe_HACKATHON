@@ -3,6 +3,7 @@ const router = express.Router();
 const User = require('../models/User');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+const auth = require('../middleware/auth');
 
 // Signup Route
 router.post('/signup', async (req, res) => {
@@ -23,7 +24,17 @@ router.post('/signup', async (req, res) => {
     
     // Generate token
     const token = jwt.sign({ id: user._id, role: user.role }, process.env.JWT_SECRET, { expiresIn: '7d' });
-    res.status(201).json({ token, user: { id: user._id, role, name, email } });
+    res.status(201).json({
+      token,
+      user: {
+        id: user._id,
+        role,
+        name,
+        email,
+        profilePic: user.profilePic,
+        settings: user.settings,
+      }
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -44,19 +55,64 @@ router.post('/login', async (req, res) => {
     
     // Generate token
     const token = jwt.sign({ id: user._id, role: user.role }, process.env.JWT_SECRET, { expiresIn: '7d' });
-    res.json({ token, user: { id: user._id, role: user.role, name: user.name, email: user.email } });
+    res.json({
+      token,
+      user: {
+        id: user._id,
+        role: user.role,
+        name: user.name,
+        email: user.email,
+        profilePic: user.profilePic,
+        settings: user.settings,
+      }
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
 // Get Current User Profile
-router.get('/me', async (req, res) => {
+router.get('/me', auth, async (req, res) => {
   try {
-    // Requires middleware setting req.user from JWT
-    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
     const user = await User.findById(req.user.id).select('-passwordHash');
     res.json(user);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Update Current User Profile / Settings
+router.patch('/me', auth, async (req, res) => {
+  try {
+    const allowedFields = [
+      'name',
+      'age',
+      'gender',
+      'medicalConditions',
+      'allergies',
+      'emergencyContact',
+      'profilePic',
+      'nominee'
+    ];
+
+    const update = {};
+    allowedFields.forEach((field) => {
+      if (req.body[field] !== undefined) update[field] = req.body[field];
+    });
+
+    if (req.body.settings !== undefined) {
+      update.settings = {
+        ...(req.body.settings || {}),
+      };
+    }
+
+    const user = await User.findByIdAndUpdate(
+      req.user.id,
+      update,
+      { new: true, runValidators: true }
+    ).select('-passwordHash');
+
+    res.json({ user });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
