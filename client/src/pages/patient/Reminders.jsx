@@ -10,6 +10,10 @@ const Reminders = () => {
     const [loading, setLoading] = useState(true);
     const [pushEnabled, setPushEnabled] = useState(false);
     const [browserReminders, setBrowserReminders] = useState(false);
+    const [customReminders, setCustomReminders] = useState([]);
+    const [customLoading, setCustomLoading] = useState(true);
+    const [customMessage, setCustomMessage] = useState('');
+    const [customForm, setCustomForm] = useState({ date: '', time: '', text: '' });
     const intervalRef = useRef(null);
     const notifiedRef = useRef(new Set());
 
@@ -22,6 +26,7 @@ const Reminders = () => {
     
     useEffect(() => {
         fetchMedications();
+        fetchCustomReminders();
         fetchNominee();
         
         // Check push subscription
@@ -58,6 +63,51 @@ const Reminders = () => {
         } catch (err) {
             console.error(err);
         }
+    };
+
+    const fetchCustomReminders = async () => {
+      try {
+        setCustomLoading(true);
+        const res = await axios.get('/reminders/my');
+        setCustomReminders(res.data || []);
+      } catch (err) {
+        console.error(err);
+        setCustomReminders([]);
+      } finally {
+        setCustomLoading(false);
+      }
+    };
+
+    const createCustomReminder = async (e) => {
+      e.preventDefault();
+      const text = String(customForm.text || '').trim();
+      if (!customForm.date || !customForm.time || !text) {
+        setCustomMessage('Please provide date, time, and text.');
+        return;
+      }
+
+      try {
+        setCustomMessage('');
+        await axios.post('/reminders/my', {
+          date: customForm.date,
+          time: customForm.time,
+          text,
+        });
+        setCustomForm({ date: '', time: '', text: '' });
+        setCustomMessage('Custom reminder added.');
+        await fetchCustomReminders();
+      } catch (err) {
+        setCustomMessage(err?.response?.data?.error || 'Failed to create custom reminder');
+      }
+    };
+
+    const updateCustomReminderStatus = async (id, status) => {
+      try {
+        await axios.patch(`/reminders/${id}/status`, { status });
+        await fetchCustomReminders();
+      } catch (err) {
+        console.error(err);
+      }
     };
 
     const saveNominee = async () => {
@@ -149,6 +199,27 @@ const Reminders = () => {
                     }
                 }
             });
+
+            customReminders.forEach((rem) => {
+              if (rem.status !== 'SCHEDULED' || !rem.remindAt) return;
+              const d = new Date(rem.remindAt);
+              const remindTime = d.getHours().toString().padStart(2, '0') + ':' + d.getMinutes().toString().padStart(2, '0');
+              const sameDay = d.toDateString() === now.toDateString();
+              if (!sameDay || remindTime !== currentTime) return;
+
+              const key = `custom-${rem._id}-${currentTime}`;
+              if (notifiedRef.current.has(key)) return;
+              notifiedRef.current.add(key);
+
+              if (Notification.permission === 'granted') {
+                new Notification('MedTrack AI Reminder', {
+                  body: rem.text,
+                  icon: '/vite.svg'
+                });
+              } else {
+                alert(`⏰ Reminder: ${rem.text}`);
+              }
+            });
         }, 30000); // Check every 30 seconds
 
         alert('Browser reminders enabled! You will get alerts when it\'s time to take your medication.');
@@ -190,6 +261,19 @@ const Reminders = () => {
                 }
             });
         });
+
+          customReminders.forEach((rem) => {
+            if (rem.status !== 'SCHEDULED' || !rem.remindAt) return;
+            const d = new Date(rem.remindAt);
+            const mins = d.getHours() * 60 + d.getMinutes();
+            const sameDay = d.toDateString() === now.toDateString();
+            if (!sameDay || mins <= currentMinutes) return;
+            if (!closest || mins < closest) {
+              closest = mins;
+              closestMed = { name: rem.text, time: d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) };
+            }
+          });
+
         return closestMed;
     };
 
@@ -278,6 +362,62 @@ const Reminders = () => {
                       </p>
                   )}
                </div>
+           </div>
+
+           <div className="mt-8 bg-white border border-slate-200 shadow-sm rounded-3xl p-8">
+              <h3 className="font-display font-bold text-xl text-slate-800 mb-2 flex items-center gap-2">
+                <Clock className="text-primary" /> My Custom Reminders
+              </h3>
+              <p className="text-slate-500 text-sm mb-6">Create your own reminders with specific date, time, and note.</p>
+
+              <form onSubmit={createCustomReminder} className="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-3 mb-5">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <input type="date" value={customForm.date} onChange={(e) => setCustomForm((p) => ({ ...p, date: e.target.value }))} className="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-primary focus:border-primary outline-none" required />
+                  <input type="time" value={customForm.time} onChange={(e) => setCustomForm((p) => ({ ...p, time: e.target.value }))} className="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-primary focus:border-primary outline-none" required />
+                </div>
+                <input type="text" value={customForm.text} onChange={(e) => setCustomForm((p) => ({ ...p, text: e.target.value }))} placeholder="Reminder text" className="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-primary focus:border-primary outline-none" required />
+                <div className="flex justify-end">
+                  <button type="submit" className="bg-primary text-white font-bold py-2.5 px-6 rounded-xl shadow-sm hover:bg-indigo-700 transition">Add Reminder</button>
+                </div>
+              </form>
+
+              {customMessage && (
+                <div className={`mb-4 rounded-xl border px-3 py-2 text-sm font-semibold ${customMessage.toLowerCase().includes('failed') || customMessage.toLowerCase().includes('please') ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>
+                  {customMessage}
+                </div>
+              )}
+
+              {customLoading ? (
+                <p className="text-slate-500 font-medium text-center py-6">Loading custom reminders...</p>
+              ) : customReminders.length === 0 ? (
+                <p className="text-slate-500 font-medium text-center py-6">No custom reminders yet.</p>
+              ) : (
+                <div className="space-y-3">
+                  {customReminders.map((rem) => (
+                    <div key={rem._id} className="rounded-2xl border border-slate-200 p-4 bg-white">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="font-bold text-slate-800 break-words">{rem.text}</p>
+                          <p className="text-xs text-slate-500 mt-1">{rem.remindAt ? new Date(rem.remindAt).toLocaleString() : '—'}</p>
+                        </div>
+                        <span className={`text-xs font-bold px-2 py-1 rounded-lg ${rem.status === 'DONE' ? 'bg-emerald-100 text-emerald-700' : rem.status === 'CANCELLED' ? 'bg-slate-200 text-slate-700' : 'bg-blue-100 text-blue-700'}`}>{rem.status || 'SCHEDULED'}</span>
+                      </div>
+
+                      <div className="mt-2 flex items-center gap-2">
+                        <img src={rem?.createdBy?.profilePic || `https://api.dicebear.com/7.x/notionists/svg?seed=${encodeURIComponent(rem?.createdBy?.name || rem?.createdByRole || 'user')}`} alt={rem?.createdBy?.name || 'Creator'} className="h-6 w-6 rounded-full border border-slate-200 object-cover bg-white" />
+                        <p className="text-xs text-slate-500">Created by {rem.createdByRole === 'DOCTOR' ? 'Doctor' : 'You'}{rem?.createdBy?.name ? ` • ${rem.createdBy.name}` : ''}</p>
+                      </div>
+
+                      {rem.status === 'SCHEDULED' && (
+                        <div className="mt-3 flex gap-2">
+                          <button onClick={() => updateCustomReminderStatus(rem._id, 'DONE')} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200">Mark Done</button>
+                          <button onClick={() => updateCustomReminderStatus(rem._id, 'CANCELLED')} className="text-xs font-bold px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 border border-slate-200">Cancel</button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
            </div>
 
            {/* Nominee Section */}

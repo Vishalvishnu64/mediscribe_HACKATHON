@@ -1,12 +1,40 @@
 const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
+const path = require('path');
+const fs = require('fs');
+const multer = require('multer');
 const auth = require('../middleware/auth');
 const ChatRequest = require('../models/ChatRequest');
 const ChatMessage = require('../models/ChatMessage');
 const User = require('../models/User');
+const Connection = require('../models/Connection');
 
 const CHAT_TTL_HOURS = 24;
+
+const chatUploadDir = path.join(__dirname, '..', 'uploads', 'chat');
+if (!fs.existsSync(chatUploadDir)) {
+  fs.mkdirSync(chatUploadDir, { recursive: true });
+}
+
+const chatStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, chatUploadDir),
+  filename: (_req, file, cb) => {
+    const safe = String(file.originalname || 'image').replace(/[^a-zA-Z0-9._-]/g, '_');
+    cb(null, `${Date.now()}-${Math.round(Math.random() * 1e9)}-${safe}`);
+  }
+});
+
+const uploadChatImage = multer({
+  storage: chatStorage,
+  limits: { fileSize: 8 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (!file.mimetype || !file.mimetype.startsWith('image/')) {
+      return cb(new Error('Only image files are allowed'));
+    }
+    cb(null, true);
+  },
+});
 
 const markExpiredIfNeeded = async (chat) => {
   if (!chat) return chat;
@@ -81,6 +109,70 @@ router.get('/patient/doctor/:doctorId/status', auth, async (req, res) => {
       expiresAt: latest.expiresAt || null,
       updatedAt: latest.updatedAt,
     });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Patient conversation list with latest chat status per doctor
+router.get('/patient/conversations', auth, async (req, res) => {
+  try {
+    if (req.user.role !== 'PATIENT') return res.status(403).json({ error: 'Unauthorized' });
+
+    const linkedDoctorIds = await Connection.find({
+      patientId: req.user.id,
+      status: { $in: ['APPROVED', 'CORRECTED'] }
+    }).distinct('doctorId');
+
+    // Also include doctors from existing chat history so conversations remain visible
+    // even if a Connection row is missing/old.
+    const chatDoctorIds = await ChatRequest.find({ patientId: req.user.id }).distinct('doctorId');
+    const doctorIdSet = new Set(
+      [...(linkedDoctorIds || []), ...(chatDoctorIds || [])]
+        .filter(Boolean)
+        .map((id) => String(id))
+    );
+
+    const allDoctorIds = [...doctorIdSet];
+
+    const doctors = allDoctorIds.length
+      ? await User.find({ _id: { $in: allDoctorIds }, role: 'DOCTOR' }).select('name profilePic')
+      : [];
+
+    const out = [];
+    for (const doctor of doctors) {
+      const latest = await ChatRequest.findOne({ patientId: req.user.id, doctorId: doctor._id }).sort({ createdAt: -1 });
+      if (latest) await markExpiredIfNeeded(latest);
+
+      const status = latest?.status || 'NONE';
+      let lastMessage = '';
+      let lastMessageAt = latest?.updatedAt || latest?.createdAt || null;
+
+      if (latest?._id) {
+        const lm = await ChatMessage.findOne({ chatRequestId: latest._id }).sort({ createdAt: -1 }).select('text imageUrl createdAt');
+        if (lm) {
+          lastMessage = lm.text || (lm.imageUrl ? '📷 Image' : '');
+          lastMessageAt = lm.createdAt;
+        }
+      }
+
+      out.push({
+        doctorId: doctor._id,
+        peer: {
+          id: doctor._id,
+          name: doctor.name,
+          profilePic: doctor.profilePic || null,
+        },
+        status,
+        requestId: latest?._id || null,
+        expiresAt: latest?.expiresAt || null,
+        lastMessage,
+        lastMessageAt: lastMessageAt || null,
+      });
+    }
+
+    out.sort((a, b) => new Date(b.lastMessageAt || 0) - new Date(a.lastMessageAt || 0));
+    res.json(out);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -161,7 +253,7 @@ router.get('/my-chats', auth, async (req, res) => {
       ? await ChatMessage.aggregate([
           { $match: { chatRequestId: { $in: ids } } },
           { $sort: { createdAt: -1 } },
-          { $group: { _id: '$chatRequestId', text: { $first: '$text' }, at: { $first: '$createdAt' } } }
+          { $group: { _id: '$chatRequestId', text: { $first: '$text' }, imageUrl: { $first: '$imageUrl' }, at: { $first: '$createdAt' } } }
         ])
       : [];
 
@@ -178,7 +270,7 @@ router.get('/my-chats', auth, async (req, res) => {
           profilePic: peer?.profilePic || null,
         },
         expiresAt: r.expiresAt,
-        lastMessage: lm?.text || '',
+        lastMessage: lm?.text || (lm?.imageUrl ? '📷 Image' : ''),
         lastMessageAt: lm?.at || r.updatedAt,
       };
     });
@@ -205,7 +297,7 @@ router.get('/:id/messages', auth, async (req, res) => {
 });
 
 // Send message
-router.post('/:id/messages', auth, async (req, res) => {
+router.post('/:id/messages', auth, uploadChatImage.single('image'), async (req, res) => {
   try {
     const chat = await ensureAccess(req.params.id, req.user.id);
     if (!chat) return res.status(404).json({ error: 'Chat not found' });
@@ -214,13 +306,15 @@ router.post('/:id/messages', auth, async (req, res) => {
     if (chat.expiresAt && new Date(chat.expiresAt) <= new Date()) return res.status(400).json({ error: 'Chat expired' });
 
     const text = String(req.body?.text || '').trim();
-    if (!text) return res.status(400).json({ error: 'Message text is required' });
+    const imageUrl = req.file ? `/uploads/chat/${req.file.filename}` : '';
+    if (!text && !imageUrl) return res.status(400).json({ error: 'Message text or image is required' });
 
     const msg = await ChatMessage.create({
       chatRequestId: chat._id,
       senderId: req.user.id,
       senderRole: req.user.role,
       text,
+      imageUrl,
     });
 
     chat.lastMessageAt = new Date();
@@ -228,6 +322,9 @@ router.post('/:id/messages', auth, async (req, res) => {
 
     res.status(201).json(msg);
   } catch (err) {
+    if (String(err?.message || '').toLowerCase().includes('only image files')) {
+      return res.status(400).json({ error: 'Only image files are allowed' });
+    }
     res.status(500).json({ error: err.message });
   }
 });

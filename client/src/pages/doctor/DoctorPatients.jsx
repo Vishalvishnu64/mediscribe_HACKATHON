@@ -32,6 +32,42 @@ const DoctorPatients = () => {
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileTab, setProfileTab] = useState('overview');
   const [profile, setProfile] = useState(null);
+  const [rxLoading, setRxLoading] = useState(false);
+  const [rxMessage, setRxMessage] = useState('');
+  const [reminderLoading, setReminderLoading] = useState(false);
+  const [reminderMessage, setReminderMessage] = useState('');
+  const [reminderForm, setReminderForm] = useState({ date: '', time: '', text: '' });
+  const [prescriptionForm, setPrescriptionForm] = useState({
+    type: 'NEW',
+    instructions: '',
+    medicines: [
+      {
+        name: '',
+        dosage: '',
+        frequency: '',
+        duration: '',
+        route: 'Oral',
+        reminderTimesText: '',
+      },
+    ],
+  });
+
+  const resetPrescriptionForm = () => {
+    setPrescriptionForm({
+      type: 'NEW',
+      instructions: '',
+      medicines: [
+        {
+          name: '',
+          dosage: '',
+          frequency: '',
+          duration: '',
+          route: 'Oral',
+          reminderTimesText: '',
+        },
+      ],
+    });
+  };
 
   const loadPatients = async () => {
     try {
@@ -88,6 +124,10 @@ const DoctorPatients = () => {
       setProfileOpen(true);
       setProfileLoading(true);
       setProfileTab('overview');
+      setRxMessage('');
+      setReminderMessage('');
+      setReminderForm({ date: '', time: '', text: '' });
+      resetPrescriptionForm();
       const res = await axios.get(`/doctor-panel/patients/${patientId}/profile`);
       setProfile(res.data || null);
     } catch (err) {
@@ -101,6 +141,112 @@ const DoctorPatients = () => {
   const closeProfile = () => {
     setProfileOpen(false);
     setProfile(null);
+    setRxMessage('');
+    setReminderMessage('');
+  };
+
+  const updateMedicineRow = (index, key, value) => {
+    setPrescriptionForm((prev) => ({
+      ...prev,
+      medicines: prev.medicines.map((m, i) => (i === index ? { ...m, [key]: value } : m)),
+    }));
+  };
+
+  const addMedicineRow = () => {
+    setPrescriptionForm((prev) => ({
+      ...prev,
+      medicines: [
+        ...prev.medicines,
+        {
+          name: '',
+          dosage: '',
+          frequency: '',
+          duration: '',
+          route: 'Oral',
+          reminderTimesText: '',
+        },
+      ],
+    }));
+  };
+
+  const removeMedicineRow = (index) => {
+    setPrescriptionForm((prev) => ({
+      ...prev,
+      medicines: prev.medicines.length <= 1 ? prev.medicines : prev.medicines.filter((_, i) => i !== index),
+    }));
+  };
+
+  const submitPrescription = async (e) => {
+    e.preventDefault();
+    if (!patient?.id) return;
+
+    const medicines = prescriptionForm.medicines
+      .map((m) => ({
+        name: String(m.name || '').trim(),
+        dosage: String(m.dosage || '').trim(),
+        frequency: String(m.frequency || '').trim(),
+        duration: String(m.duration || '').trim(),
+        route: String(m.route || '').trim(),
+        reminderTimes: String(m.reminderTimesText || '')
+          .split(',')
+          .map((t) => t.trim())
+          .filter(Boolean),
+      }))
+      .filter((m) => m.name);
+
+    if (!medicines.length) {
+      setRxMessage('Please add at least one medicine name.');
+      return;
+    }
+
+    try {
+      setRxLoading(true);
+      setRxMessage('');
+      await axios.post(`/doctor-panel/patients/${patient.id}/prescriptions`, {
+        type: prescriptionForm.type,
+        instructions: prescriptionForm.instructions,
+        medicines,
+      });
+      setRxMessage('Prescription added and reminders updated for patient.');
+      resetPrescriptionForm();
+      const refresh = await axios.get(`/doctor-panel/patients/${patient.id}/profile`);
+      setProfile(refresh.data || null);
+      setProfileTab('reminder');
+    } catch (err) {
+      console.error(err);
+      setRxMessage(err?.response?.data?.error || 'Failed to add prescription.');
+    } finally {
+      setRxLoading(false);
+    }
+  };
+
+  const submitDoctorReminder = async (e) => {
+    e.preventDefault();
+    if (!patient?.id) return;
+    if (!reminderForm.date || !reminderForm.time || !reminderForm.text.trim()) {
+      setReminderMessage('Please provide date, time and reminder text.');
+      return;
+    }
+
+    try {
+      setReminderLoading(true);
+      setReminderMessage('');
+      await axios.post(`/doctor-panel/patients/${patient.id}/reminders`, {
+        date: reminderForm.date,
+        time: reminderForm.time,
+        text: reminderForm.text.trim(),
+      });
+      setReminderMessage('Reminder added for patient.');
+      setReminderForm({ date: '', time: '', text: '' });
+
+      const refresh = await axios.get(`/doctor-panel/patients/${patient.id}/profile`);
+      setProfile(refresh.data || null);
+    } catch (err) {
+      console.error(err);
+      setReminderMessage(err?.response?.data?.error || 'Failed to add reminder.');
+    } finally {
+      setReminderLoading(false);
+    }
   };
 
   const onAddPatient = async (e) => {
@@ -141,6 +287,12 @@ const DoctorPatients = () => {
 
   const patient = profile?.patient;
   const latestVital = profile?.vitals?.[0] || null;
+  const customReminders = profile?.customReminders || [];
+
+  const avatarFor = (person, fallback = 'user') => {
+    const seed = encodeURIComponent(String(person?.name || fallback));
+    return person?.profilePic || `https://api.dicebear.com/7.x/notionists/svg?seed=${seed}`;
+  };
 
   return (
     <Layout title="My Patients" subtitle="Search, filter, sort, and review detailed patient records.">
@@ -313,12 +465,19 @@ const DoctorPatients = () => {
         <div className="fixed inset-0 z-50 bg-slate-900/45 backdrop-blur-sm flex items-center justify-center p-4" onClick={closeProfile}>
           <div className="w-full max-w-4xl max-h-[90vh] overflow-auto bg-white rounded-3xl border border-slate-200 shadow-2xl p-6" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-start justify-between gap-4 mb-4">
-              <div className="min-w-0">
-                <h2 className="text-3xl font-display font-bold text-slate-800 truncate">{patient?.name || 'Patient'}</h2>
-                <p className="text-sm text-slate-500 mt-1">{patient?.age || '—'} • {patient?.gender || '—'} • Blood: {patient?.blood_type || '—'}</p>
-                <div className="flex flex-wrap items-center gap-2 mt-2">
-                  <span className="text-xs font-bold px-2 py-1 rounded-full bg-slate-100 text-slate-700">{patient?.status || '—'}</span>
-                  <span className="text-xs font-bold px-2 py-1 rounded-full bg-blue-100 text-blue-700">{patient?.primary_condition || 'No condition'}</span>
+              <div className="min-w-0 flex items-start gap-3">
+                <img
+                  src={avatarFor({ name: patient?.name, profilePic: patient?.profilePic }, 'patient')}
+                  alt={patient?.name || 'Patient'}
+                  className="h-12 w-12 rounded-full border border-slate-200 bg-white object-cover"
+                />
+                <div className="min-w-0">
+                  <h2 className="text-3xl font-display font-bold text-slate-800 truncate">{patient?.name || 'Patient'}</h2>
+                  <p className="text-sm text-slate-500 mt-1">{patient?.age || '—'} • {patient?.gender || '—'} • Blood: {patient?.blood_type || '—'}</p>
+                  <div className="flex flex-wrap items-center gap-2 mt-2">
+                    <span className="text-xs font-bold px-2 py-1 rounded-full bg-slate-100 text-slate-700">{patient?.status || '—'}</span>
+                    <span className="text-xs font-bold px-2 py-1 rounded-full bg-blue-100 text-blue-700">{patient?.primary_condition || 'No condition'}</span>
+                  </div>
                 </div>
               </div>
               <button type="button" onClick={closeProfile} className="h-9 w-9 inline-flex items-center justify-center rounded-xl border border-slate-200 hover:bg-slate-50"><X size={16} /></button>
@@ -331,6 +490,8 @@ const DoctorPatients = () => {
                 { key: 'imaging', label: 'Imaging' },
                 { key: 'timeline', label: 'Timeline' },
                 { key: 'wearable', label: 'Wearable' },
+                { key: 'prescription', label: 'Prescription' },
+                { key: 'reminder', label: 'Reminder' },
               ].map((t) => (
                 <button key={t.key} type="button" onClick={() => setProfileTab(t.key)} className={`px-3 py-1.5 rounded-xl text-sm font-bold border ${profileTab === t.key ? 'bg-primary/10 text-primary border-primary/20' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>
                   {t.label}
@@ -435,6 +596,167 @@ const DoctorPatients = () => {
                         <p className="text-lg font-display font-bold text-slate-800">{w.value ?? '—'} {w.unit || ''}</p>
                       </div>
                     ))}
+                  </div>
+                )}
+
+                {profileTab === 'prescription' && (
+                  <div className="space-y-4">
+                    <form onSubmit={submitPrescription} className="rounded-2xl border border-slate-200 p-4 space-y-3">
+                      <div className="flex flex-col md:flex-row gap-3">
+                        <select value={prescriptionForm.type} onChange={(e) => setPrescriptionForm((prev) => ({ ...prev, type: e.target.value }))} className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-primary md:w-48">
+                          <option value="NEW">New Prescription</option>
+                          <option value="OLD">Old / History</option>
+                        </select>
+                        <input
+                          value={prescriptionForm.instructions}
+                          onChange={(e) => setPrescriptionForm((prev) => ({ ...prev, instructions: e.target.value }))}
+                          placeholder="Instructions (optional)"
+                          className="flex-1 rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-primary"
+                        />
+                      </div>
+
+                      <div className="space-y-3">
+                        {prescriptionForm.medicines.map((med, idx) => (
+                          <div key={`rx-${idx}`} className="rounded-xl border border-slate-200 p-3 space-y-3 bg-slate-50">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <input required value={med.name} onChange={(e) => updateMedicineRow(idx, 'name', e.target.value)} placeholder="Medicine name" className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-primary" />
+                              <input value={med.dosage} onChange={(e) => updateMedicineRow(idx, 'dosage', e.target.value)} placeholder="Quantity / Dosage (e.g., 500mg, 1 tablet)" className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-primary" />
+                              <input value={med.frequency} onChange={(e) => updateMedicineRow(idx, 'frequency', e.target.value)} placeholder="Frequency (e.g., Twice daily)" className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-primary" />
+                              <input value={med.duration} onChange={(e) => updateMedicineRow(idx, 'duration', e.target.value)} placeholder="Duration (e.g., 5 days)" className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-primary" />
+                              <select value={med.route} onChange={(e) => updateMedicineRow(idx, 'route', e.target.value)} className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-primary">
+                                <option value="Oral">Oral</option>
+                                <option value="Injection">Injection</option>
+                                <option value="Topical">Topical</option>
+                                <option value="Inhalation">Inhalation</option>
+                                <option value="Other">Other</option>
+                              </select>
+                              <input value={med.reminderTimesText} onChange={(e) => updateMedicineRow(idx, 'reminderTimesText', e.target.value)} placeholder="Reminder times (comma separated, e.g. 08:00, 21:00)" className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-primary" />
+                            </div>
+                            <div className="flex justify-end">
+                              <button type="button" disabled={prescriptionForm.medicines.length <= 1} onClick={() => removeMedicineRow(idx)} className="px-3 py-1.5 rounded-lg text-xs font-bold border border-slate-200 text-slate-600 disabled:opacity-40">Remove</button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="flex flex-wrap gap-2 justify-between">
+                        <button type="button" onClick={addMedicineRow} className="px-3 py-2 rounded-xl border border-slate-200 text-sm font-semibold text-slate-700 hover:bg-slate-50">+ Add medicine</button>
+                        <button type="submit" disabled={rxLoading} className="px-4 py-2 rounded-xl bg-primary text-white text-sm font-bold disabled:opacity-60">
+                          {rxLoading ? 'Saving...' : 'Save Prescription'}
+                        </button>
+                      </div>
+                    </form>
+
+                    {rxMessage && (
+                      <div className={`rounded-xl border px-3 py-2 text-sm font-semibold ${rxMessage.toLowerCase().includes('failed') || rxMessage.toLowerCase().includes('please') ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>
+                        {rxMessage}
+                      </div>
+                    )}
+
+                    <div className="rounded-2xl border border-slate-200 p-4">
+                      <p className="text-sm font-bold text-slate-700 mb-3">Past Prescriptions</p>
+                      {(profile.prescriptions || []).length === 0 ? (
+                        <p className="text-sm text-slate-500">No prescriptions yet.</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {(profile.prescriptions || []).map((rx) => (
+                            <div key={rx._id} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                              <p className="text-sm font-semibold text-slate-800">{rx.type || 'NEW'} • {rx.doctorRecognizedName || 'Doctor'}</p>
+                              <p className="text-xs text-slate-500 mt-1">{rx.date ? new Date(rx.date).toLocaleString() : ''}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {profileTab === 'reminder' && (
+                  <div className="space-y-4">
+                    <form onSubmit={submitDoctorReminder} className="rounded-2xl border border-slate-200 p-4 bg-slate-50 space-y-3">
+                      <p className="text-sm font-bold text-slate-700">Add custom reminder for patient</p>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <input
+                          type="date"
+                          value={reminderForm.date}
+                          onChange={(e) => setReminderForm((prev) => ({ ...prev, date: e.target.value }))}
+                          className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-primary"
+                          required
+                        />
+                        <input
+                          type="time"
+                          value={reminderForm.time}
+                          onChange={(e) => setReminderForm((prev) => ({ ...prev, time: e.target.value }))}
+                          className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-primary"
+                          required
+                        />
+                      </div>
+                      <input
+                        value={reminderForm.text}
+                        onChange={(e) => setReminderForm((prev) => ({ ...prev, text: e.target.value }))}
+                        placeholder="Reminder text (e.g., Check blood sugar before breakfast)"
+                        className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-primary"
+                        required
+                      />
+                      <div className="flex justify-end">
+                        <button type="submit" disabled={reminderLoading} className="px-4 py-2 rounded-xl bg-primary text-white text-sm font-bold disabled:opacity-60">
+                          {reminderLoading ? 'Saving...' : 'Save Reminder'}
+                        </button>
+                      </div>
+                    </form>
+
+                    {reminderMessage && (
+                      <div className={`rounded-xl border px-3 py-2 text-sm font-semibold ${reminderMessage.toLowerCase().includes('failed') || reminderMessage.toLowerCase().includes('please') ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>
+                        {reminderMessage}
+                      </div>
+                    )}
+
+                    <div className="rounded-2xl border border-slate-200 p-4">
+                      <p className="text-sm font-bold text-slate-700 mb-3">Medication reminder schedule</p>
+                      {(profile.reminders || []).length === 0 ? (
+                        <p className="text-sm text-slate-500">No active medication reminders.</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {(profile.reminders || []).map((r) => (
+                            <div key={r._id} className="rounded-2xl border border-slate-200 p-3">
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <p className="font-semibold text-slate-800">{r.name || 'Medicine'}</p>
+                                  <p className="text-sm text-slate-500 mt-1">{r.dosage || '—'} {r.frequency ? `• ${r.frequency}` : ''} {r.duration ? `• ${r.duration}` : ''}</p>
+                                </div>
+                                <span className="text-[11px] font-bold px-2 py-1 rounded-full bg-emerald-100 text-emerald-700">{r.status || 'ACTIVE'}</span>
+                              </div>
+                              <p className="text-xs text-slate-500 mt-2">Times: {(r.reminderTimes || []).length ? r.reminderTimes.join(', ') : 'Not set'}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200 p-4">
+                      <p className="text-sm font-bold text-slate-700 mb-3">Custom reminders</p>
+                      {customReminders.length === 0 ? (
+                        <p className="text-sm text-slate-500">No custom reminders yet.</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {customReminders.map((r) => (
+                            <div key={r._id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <p className="text-sm font-semibold text-slate-800 break-words">{r.text}</p>
+                                  <p className="text-xs text-slate-500 mt-1">{r.remindAt ? new Date(r.remindAt).toLocaleString() : '—'}</p>
+                                </div>
+                                <span className="text-[11px] font-bold px-2 py-1 rounded-full bg-blue-100 text-blue-700">{r.status || 'SCHEDULED'}</span>
+                              </div>
+                              <div className="mt-2 flex items-center gap-2">
+                                <img src={avatarFor(r.createdBy, r.createdByRole || 'user')} alt={r.createdBy?.name || 'Creator'} className="h-6 w-6 rounded-full border border-slate-200 bg-white object-cover" />
+                                <p className="text-xs text-slate-500">Created by {r.createdByRole === 'DOCTOR' ? 'Doctor' : 'Patient'}{r.createdBy?.name ? ` • ${r.createdBy.name}` : ''}</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
               </>

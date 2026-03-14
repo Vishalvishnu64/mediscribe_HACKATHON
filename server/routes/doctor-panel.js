@@ -5,6 +5,8 @@ const mongoose = require('mongoose');
 const User = require('../models/User');
 const Connection = require('../models/Connection');
 const Medication = require('../models/Medication');
+const Prescription = require('../models/Prescription');
+const CustomReminder = require('../models/CustomReminder');
 const DoctorPatient = require('../models/DoctorPatient');
 const Vital = require('../models/Vital');
 const LabResult = require('../models/LabResult');
@@ -280,21 +282,186 @@ router.get('/patients/:id/profile', async (req, res) => {
     const patient = await DoctorPatient.findById(id);
     if (!patient) return res.status(404).json({ error: 'Not found' });
 
-    const [vitals, labs, images, timeline, wearable, alerts] = await Promise.all([
+    const patientUserId = patient.patientId || null;
+
+    const [vitals, labs, images, timeline, wearable, alerts, prescriptions, reminders, customReminders] = await Promise.all([
       Vital.find({ patient_id: id }).sort({ recorded_at: -1 }),
       LabResult.find({ patient_id: id }).sort({ recorded_at: -1 }),
       Imaging.find({ patient_id: id }).sort({ recorded_at: -1 }),
       Timeline.find({ patient_id: id }).sort({ event_date: -1 }),
       WearableData.find({ patient_id: id }).sort({ recorded_at: 1 }),
       ClinicalAlert.find({ patient_id: id, resolved: false }).sort({ severity: -1, createdAt: -1 }),
+      patientUserId ? Prescription.find({ patientId: patientUserId }).sort({ createdAt: -1 }) : [],
+      patientUserId ? Medication.find({ patientId: patientUserId, status: 'ACTIVE' }).sort({ createdAt: -1 }) : [],
+      patientUserId
+        ? CustomReminder.find({ patientId: patientUserId })
+            .sort({ remindAt: 1 })
+            .populate('createdById', 'name profilePic role')
+        : [],
     ]);
 
     res.json({
       patient: { id: patient._id, ...patient.toObject() },
-      vitals, labs, images, timeline, wearable, alerts
+      vitals,
+      labs,
+      images,
+      timeline,
+      wearable,
+      alerts,
+      prescriptions,
+      reminders,
+      customReminders: (customReminders || []).map((r) => ({
+        _id: r._id,
+        text: r.text,
+        remindAt: r.remindAt,
+        status: r.status,
+        createdByRole: r.createdByRole,
+        createdBy: r.createdById
+          ? {
+              id: r.createdById._id,
+              name: r.createdById.name,
+              role: r.createdById.role,
+              profilePic: r.createdById.profilePic || null,
+            }
+          : null,
+        createdAt: r.createdAt,
+      })),
     });
   } catch (err) {
     res.status(500).json({ error: 'Failed' });
+  }
+});
+
+// --- Doctor creates custom reminder for patient ---
+router.post('/patients/:id/reminders', async (req, res) => {
+  try {
+    const doctorId = getDoctorId(req);
+    if (!doctorId) return res.status(401).json({ error: 'Invalid token' });
+
+    const id = req.params.id;
+    if (!mongoose.Types.ObjectId.isValid(id)) return res.status(400).json({ error: 'Invalid ID' });
+    const patient = await DoctorPatient.findById(id);
+    if (!patient) return res.status(404).json({ error: 'Patient not found' });
+    if (!patient.patientId) return res.status(400).json({ error: 'This patient is not linked to a patient account' });
+
+    const text = String(req.body?.text || '').trim();
+    const date = String(req.body?.date || '').trim();
+    const time = String(req.body?.time || '').trim();
+    if (!text) return res.status(400).json({ error: 'Reminder text is required' });
+    if (!date || !time) return res.status(400).json({ error: 'Date and time are required' });
+
+    const remindAt = new Date(`${date}T${time}:00`);
+    if (Number.isNaN(remindAt.getTime())) return res.status(400).json({ error: 'Invalid date/time' });
+
+    const doctorUser = await User.findById(doctorId).select('name profilePic role');
+
+    const reminder = await CustomReminder.create({
+      patientId: patient.patientId,
+      createdById: doctorId,
+      createdByRole: 'DOCTOR',
+      text,
+      remindAt,
+      status: 'SCHEDULED',
+    });
+
+    res.status(201).json({
+      _id: reminder._id,
+      text: reminder.text,
+      remindAt: reminder.remindAt,
+      status: reminder.status,
+      createdByRole: reminder.createdByRole,
+      createdBy: doctorUser
+        ? {
+            id: doctorUser._id,
+            name: doctorUser.name,
+            role: doctorUser.role,
+            profilePic: doctorUser.profilePic || null,
+          }
+        : null,
+      createdAt: reminder.createdAt,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Failed to add reminder' });
+  }
+});
+
+// --- Doctor adds prescription for patient ---
+router.post('/patients/:id/prescriptions', async (req, res) => {
+  try {
+    const doctorId = getDoctorId(req);
+    if (!doctorId) return res.status(401).json({ error: 'Invalid token' });
+
+    const id = req.params.id;
+    if (!mongoose.Types.ObjectId.isValid(id)) return res.status(400).json({ error: 'Invalid ID' });
+    const patient = await DoctorPatient.findById(id);
+    if (!patient) return res.status(404).json({ error: 'Patient not found' });
+    if (!patient.patientId) return res.status(400).json({ error: 'This patient is not linked to a patient account' });
+
+    const { type = 'NEW', medicines = [], instructions = '' } = req.body;
+    if (!Array.isArray(medicines) || medicines.length === 0) {
+      return res.status(400).json({ error: 'At least one medicine is required' });
+    }
+
+    const doctorUser = await User.findById(doctorId).select('name registrationNumber');
+
+    const normalizedMeds = medicines.map((m) => ({
+      name: String(m.name || '').trim(),
+      dosage: String(m.dosage || '').trim(),
+      frequency: String(m.frequency || '').trim(),
+      duration: String(m.duration || '').trim(),
+      route: String(m.route || '').trim(),
+      reminderTimes: Array.isArray(m.reminderTimes)
+        ? m.reminderTimes.map((t) => String(t || '').trim()).filter(Boolean)
+        : [],
+    })).filter((m) => m.name);
+
+    if (!normalizedMeds.length) return res.status(400).json({ error: 'Medicine names are required' });
+
+    const prescription = await Prescription.create({
+      patientId: patient.patientId,
+      doctorId,
+      doctorRecognizedName: doctorUser?.name || 'Doctor',
+      doctorRegNo: doctorUser?.registrationNumber || '',
+      date: new Date(),
+      type: type === 'OLD' ? 'OLD' : 'NEW',
+      verificationStatus: 'VERIFIED',
+      verificationNote: 'Added directly by doctor',
+      reviewedAt: new Date(),
+      rawOcrData: {
+        doctor: {
+          name: doctorUser?.name || 'Doctor',
+          regNo: doctorUser?.registrationNumber || '',
+          clinic: '',
+          date: new Date().toISOString().slice(0, 10),
+        },
+        patient: { name: patient.name || '' },
+        medicines: normalizedMeds.map(({ reminderTimes, ...rest }) => rest),
+        instructions: String(instructions || '').trim(),
+      }
+    });
+
+    const medsToInsert = normalizedMeds.map((m) => ({
+      prescriptionId: prescription._id,
+      patientId: patient.patientId,
+      name: m.name,
+      dosage: m.dosage,
+      frequency: m.frequency,
+      duration: m.duration,
+      reminderTimes: m.reminderTimes,
+      doctorName: doctorUser?.name || 'Doctor',
+      status: prescription.type === 'NEW' ? 'ACTIVE' : 'HISTORY',
+      isManual: false,
+    }));
+
+    await Medication.insertMany(medsToInsert);
+
+    res.status(201).json({
+      success: true,
+      prescription,
+      medicationsAdded: medsToInsert.length,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Failed to add prescription' });
   }
 });
 

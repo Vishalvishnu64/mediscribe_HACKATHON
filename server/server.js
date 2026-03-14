@@ -22,6 +22,7 @@ app.use('/api/auth', require('./routes/auth'));
 app.use('/api/prescriptions', require('./routes/prescriptions'));
 app.use('/api/doctors', require('./routes/doctors'));
 app.use('/api/medications', require('./routes/medications'));
+app.use('/api/reminders', require('./routes/reminders'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/chats', require('./routes/chats'));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));

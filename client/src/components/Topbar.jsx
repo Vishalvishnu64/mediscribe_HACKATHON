@@ -20,15 +20,23 @@ const Topbar = ({ title, subtitle }) => {
     return clean ? `Dr. ${clean}` : 'Doctor';
   };
 
+  const avatarFor = (person, fallback = 'user') => {
+    const seed = encodeURIComponent(String(person?.name || fallback));
+    return person?.profilePic || `https://api.dicebear.com/7.x/notionists/svg?seed=${seed}`;
+  };
+
   useEffect(() => {
     const loadNotifications = async () => {
       try {
-        const res = await axios.get('/medications/active');
+        const [medRes, reminderRes] = await Promise.all([
+          axios.get('/medications/active'),
+          isPatient ? axios.get('/reminders/my') : Promise.resolve({ data: [] }),
+        ]);
         const now = new Date();
         const nowMinutes = now.getHours() * 60 + now.getMinutes();
 
         const items = [];
-        (res.data || []).forEach((med) => {
+        (medRes.data || []).forEach((med) => {
           (med.reminderTimes || []).forEach((t) => {
             const [h, m] = t.split(':').map(Number);
             if (Number.isNaN(h) || Number.isNaN(m)) return;
@@ -45,6 +53,22 @@ const Topbar = ({ title, subtitle }) => {
           });
         });
 
+        (reminderRes.data || []).forEach((rem) => {
+          if (rem.status !== 'SCHEDULED' || !rem.remindAt) return;
+          const d = new Date(rem.remindAt);
+          if (d.toDateString() !== now.toDateString()) return;
+          const mins = d.getHours() * 60 + d.getMinutes();
+          if (mins >= nowMinutes) {
+            items.push({
+              id: `custom-${rem._id}`,
+              title: rem.text,
+              time: d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              dosage: rem.createdByRole === 'DOCTOR' ? 'Doctor reminder' : 'Custom reminder',
+              delta: mins - nowMinutes,
+            });
+          }
+        });
+
         items.sort((a, b) => a.delta - b.delta);
         setNotifications(items.slice(0, 8));
       } catch (err) {
@@ -53,7 +77,7 @@ const Topbar = ({ title, subtitle }) => {
     };
 
     loadNotifications();
-  }, [title]);
+  }, [title, isPatient]);
 
   const unreadCount = useMemo(() => notifications.length, [notifications]);
 
@@ -140,8 +164,13 @@ const Topbar = ({ title, subtitle }) => {
                     }}
                     className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50"
                   >
-                    <p className="text-sm font-semibold text-slate-700 truncate">{isPatient ? formatDoctorName(doc.name) : doc.name}</p>
-                    <p className="text-xs text-slate-500 truncate">{isPatient ? `${doc.specialization || 'General'} • ${doc.hospital || 'Hospital not set'}` : `${doc.primary_condition || 'No condition'} • ${doc.status || '—'}`}</p>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <img src={avatarFor(doc, isPatient ? 'doctor' : 'patient')} alt={doc.name || 'User'} className="h-7 w-7 rounded-full border border-slate-200 object-cover bg-white" />
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-slate-700 truncate">{isPatient ? formatDoctorName(doc.name) : doc.name}</p>
+                        <p className="text-xs text-slate-500 truncate">{isPatient ? `${doc.specialization || 'General'} • ${doc.hospital || 'Hospital not set'}` : `${doc.primary_condition || 'No condition'} • ${doc.status || '—'}`}</p>
+                      </div>
+                    </div>
                   </button>
                 ))
               )}

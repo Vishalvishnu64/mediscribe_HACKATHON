@@ -1,22 +1,27 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import axios from 'axios';
 import Layout from '../../components/Layout';
 import { useAuth } from '../../context/AuthContext';
-import { Loader2, SendHorizonal } from 'lucide-react';
+import { Loader2, SendHorizonal, ImagePlus, X } from 'lucide-react';
 
 const ChatRoom = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const { chatId } = useParams();
   const isDoctor = user?.role === 'DOCTOR';
+  const mediaBaseUrl = String(axios.defaults.baseURL || '').replace(/\/api\/?$/, '');
 
   const [loading, setLoading] = useState(true);
   const [chats, setChats] = useState([]);
+  const [patientConversations, setPatientConversations] = useState([]);
   const [activeChatId, setActiveChatId] = useState(chatId || '');
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState('');
+  const [selectedImage, setSelectedImage] = useState(null);
+  const [selectedImagePreview, setSelectedImagePreview] = useState('');
   const [sending, setSending] = useState(false);
+  const imageInputRef = useRef(null);
 
   const loadChats = async () => {
     try {
@@ -30,6 +35,17 @@ const ChatRoom = () => {
       }
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const loadPatientConversations = async () => {
+    if (isDoctor) return;
+    try {
+      const res = await axios.get('/chats/patient/conversations');
+      setPatientConversations(res.data || []);
+    } catch (err) {
+      console.error(err);
+      setPatientConversations([]);
     }
   };
 
@@ -48,7 +64,7 @@ const ChatRoom = () => {
     const boot = async () => {
       try {
         setLoading(true);
-        await loadChats();
+        await Promise.all([loadChats(), loadPatientConversations()]);
       } finally {
         setLoading(false);
       }
@@ -64,6 +80,7 @@ const ChatRoom = () => {
   useEffect(() => {
     const t = setInterval(async () => {
       await loadChats();
+      await loadPatientConversations();
       if (activeChatId) await loadMessages(activeChatId);
     }, 3000);
     return () => clearInterval(t);
@@ -77,11 +94,23 @@ const ChatRoom = () => {
   const activeChat = useMemo(() => chats.find((c) => c.id === activeChatId) || null, [chats, activeChatId]);
 
   const sendMessage = async () => {
-    if (!activeChatId || !text.trim() || sending) return;
+    if (!activeChatId || sending || (!text.trim() && !selectedImage)) return;
     try {
       setSending(true);
-      await axios.post(`/chats/${activeChatId}/messages`, { text: text.trim() });
+      if (selectedImage) {
+        const fd = new FormData();
+        fd.append('text', text.trim());
+        fd.append('image', selectedImage);
+        await axios.post(`/chats/${activeChatId}/messages`, fd, {
+          headers: { 'Content-Type': 'multipart/form-data' }
+        });
+      } else {
+        await axios.post(`/chats/${activeChatId}/messages`, { text: text.trim() });
+      }
       setText('');
+      setSelectedImage(null);
+      setSelectedImagePreview('');
+      if (imageInputRef.current) imageInputRef.current.value = '';
       await loadMessages(activeChatId);
       await loadChats();
     } catch (err) {
@@ -97,7 +126,44 @@ const ChatRoom = () => {
     return clean ? `Dr. ${clean}` : 'Doctor';
   };
 
+  const avatarFor = (person, fallback = 'user') => {
+    const seed = encodeURIComponent(String(person?.name || fallback));
+    return person?.profilePic || `https://api.dicebear.com/7.x/notionists/svg?seed=${seed}`;
+  };
+
   const title = isDoctor ? 'Patient Chats' : 'Doctor Chats';
+
+  const requestChatForDoctor = async (doctorId) => {
+    try {
+      await axios.post(`/chats/request/${doctorId}`);
+      await loadPatientConversations();
+    } catch (err) {
+      alert(err?.response?.data?.error || 'Failed to request chat');
+    }
+  };
+
+  const onPickImage = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type?.startsWith('image/')) {
+      alert('Please select an image file');
+      return;
+    }
+    setSelectedImage(file);
+    const previewUrl = URL.createObjectURL(file);
+    setSelectedImagePreview(previewUrl);
+  };
+
+  const clearPickedImage = () => {
+    if (selectedImagePreview) URL.revokeObjectURL(selectedImagePreview);
+    setSelectedImage(null);
+    setSelectedImagePreview('');
+    if (imageInputRef.current) imageInputRef.current.value = '';
+  };
+
+  useEffect(() => () => {
+    if (selectedImagePreview) URL.revokeObjectURL(selectedImagePreview);
+  }, [selectedImagePreview]);
 
   return (
     <Layout title={title} subtitle="Temporary chat rooms with instant messaging.">
@@ -112,7 +178,7 @@ const ChatRoom = () => {
               <h3 className="font-display font-bold text-slate-800">Conversations</h3>
             </div>
             <div className="overflow-auto h-[calc(100%-65px)]">
-              {chats.length === 0 ? (
+              {isDoctor ? (chats.length === 0 ? (
                 <p className="p-4 text-sm text-slate-500">No active chats.</p>
               ) : chats.map((c) => (
                 <button
@@ -124,12 +190,57 @@ const ChatRoom = () => {
                   }}
                   className={`w-full text-left px-4 py-3 border-b border-slate-100 ${activeChatId === c.id ? 'bg-white' : 'hover:bg-white/80'}`}
                 >
-                  <p className="font-semibold text-slate-800 truncate">
-                    {isDoctor ? c.peer?.name : formatDoctorName(c.peer?.name)}
-                  </p>
+                  <div className="flex items-center gap-2">
+                    <img
+                      src={avatarFor(c.peer, 'user')}
+                      alt={c.peer?.name || 'User'}
+                      className="h-8 w-8 rounded-full border border-slate-200 bg-white object-cover"
+                    />
+                    <p className="font-semibold text-slate-800 truncate">{c.peer?.name}</p>
+                  </div>
                   <p className="text-xs text-slate-500 truncate mt-1">{c.lastMessage || 'No messages yet'}</p>
                 </button>
-              ))}
+              ))) : (patientConversations.length === 0 ? (
+                <p className="p-4 text-sm text-slate-500">No doctor conversations yet.</p>
+              ) : patientConversations.map((c) => (
+                <div key={`pc-${c.doctorId}`} className={`px-4 py-3 border-b border-slate-100 ${activeChatId === c.requestId ? 'bg-white' : 'hover:bg-white/80'}`}>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <img
+                          src={avatarFor(c.peer, 'doctor')}
+                          alt={c.peer?.name || 'Doctor'}
+                          className="h-8 w-8 rounded-full border border-slate-200 bg-white object-cover"
+                        />
+                        <p className="font-semibold text-slate-800 truncate">{formatDoctorName(c.peer?.name)}</p>
+                      </div>
+                      <p className="text-xs text-slate-500 truncate mt-1">{c.lastMessage || (c.status === 'PENDING' ? 'Chat request pending...' : c.status === 'DENIED' ? 'Previous request denied' : c.status === 'EXPIRED' ? 'Previous chat expired' : 'No active chat')}</p>
+                    </div>
+
+                    {c.status === 'ACCEPTED' && c.requestId ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveChatId(c.requestId);
+                          navigate(`/patient/chats/${c.requestId}`);
+                        }}
+                        className="text-xs font-bold px-2.5 py-1.5 rounded-lg bg-primary text-white"
+                      >
+                        Open
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => requestChatForDoctor(c.doctorId)}
+                        disabled={c.status === 'PENDING'}
+                        className="text-xs font-bold px-2.5 py-1.5 rounded-lg border border-primary/30 bg-primary/10 text-primary disabled:opacity-60"
+                      >
+                        {c.status === 'PENDING' ? 'Pending' : 'Request Chat'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )))}
             </div>
           </div>
 
@@ -141,9 +252,16 @@ const ChatRoom = () => {
             ) : (
               <>
                 <div className="px-4 py-3 border-b border-slate-200 bg-white flex items-center justify-between">
-                  <div>
-                    <p className="font-bold text-slate-800">{isDoctor ? activeChat.peer?.name : formatDoctorName(activeChat.peer?.name)}</p>
-                    <p className="text-xs text-slate-500">Chat expires: {activeChat.expiresAt ? new Date(activeChat.expiresAt).toLocaleString() : '—'}</p>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <img
+                      src={avatarFor(activeChat.peer, 'chat-user')}
+                      alt={activeChat.peer?.name || 'User'}
+                      className="h-9 w-9 rounded-full border border-slate-200 bg-white object-cover"
+                    />
+                    <div className="min-w-0">
+                      <p className="font-bold text-slate-800 truncate">{isDoctor ? activeChat.peer?.name : formatDoctorName(activeChat.peer?.name)}</p>
+                      <p className="text-xs text-slate-500">Chat expires: {activeChat.expiresAt ? new Date(activeChat.expiresAt).toLocaleString() : '—'}</p>
+                    </div>
                   </div>
                 </div>
 
@@ -155,7 +273,16 @@ const ChatRoom = () => {
                     return (
                       <div key={m._id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
                         <div className={`max-w-[75%] rounded-2xl px-3 py-2 shadow-sm ${mine ? 'bg-[#d9fdd3] text-slate-800 rounded-br-md' : 'bg-white text-slate-800 rounded-bl-md'}`}>
-                          <p className="text-sm whitespace-pre-wrap break-words">{m.text}</p>
+                          {m.imageUrl && (
+                            <a href={`${mediaBaseUrl}${m.imageUrl}`} target="_blank" rel="noreferrer" className="block mb-2">
+                              <img
+                                src={`${mediaBaseUrl}${m.imageUrl}`}
+                                alt="Chat attachment"
+                                className="max-h-64 w-auto rounded-xl border border-slate-200 object-cover"
+                              />
+                            </a>
+                          )}
+                          {m.text ? <p className="text-sm whitespace-pre-wrap break-words">{m.text}</p> : null}
                           <p className="text-[10px] text-slate-500 mt-1 text-right">{new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
                         </div>
                       </div>
@@ -164,6 +291,15 @@ const ChatRoom = () => {
                 </div>
 
                 <div className="p-3 bg-white border-t border-slate-200 flex items-end gap-2">
+                  <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={onPickImage} />
+                  <button
+                    type="button"
+                    onClick={() => imageInputRef.current?.click()}
+                    className="h-11 w-11 inline-flex items-center justify-center rounded-full border border-slate-300 text-slate-600 hover:border-primary/40 hover:text-primary"
+                    title="Send image"
+                  >
+                    <ImagePlus size={18} />
+                  </button>
                   <textarea
                     rows={2}
                     value={text}
@@ -180,12 +316,26 @@ const ChatRoom = () => {
                   <button
                     type="button"
                     onClick={sendMessage}
-                    disabled={sending || !text.trim()}
+                    disabled={sending || (!text.trim() && !selectedImage)}
                     className="h-11 w-11 inline-flex items-center justify-center rounded-full bg-primary text-white disabled:opacity-50"
                   >
                     {sending ? <Loader2 size={16} className="animate-spin" /> : <SendHorizonal size={16} />}
                   </button>
                 </div>
+                {selectedImagePreview && (
+                  <div className="px-3 pb-3 bg-white border-t border-slate-100">
+                    <div className="inline-flex items-start gap-2 rounded-xl border border-slate-200 p-2 bg-slate-50">
+                      <img src={selectedImagePreview} alt="Selected" className="h-16 w-16 rounded-lg object-cover border border-slate-200" />
+                      <div>
+                        <p className="text-xs font-semibold text-slate-700 max-w-[220px] truncate">{selectedImage?.name || 'image'}</p>
+                        <p className="text-[11px] text-slate-500">Ready to send</p>
+                      </div>
+                      <button type="button" onClick={clearPickedImage} className="h-6 w-6 inline-flex items-center justify-center rounded-md border border-slate-200 text-slate-500 hover:bg-white">
+                        <X size={14} />
+                      </button>
+                    </div>
+                  </div>
+                )}
               </>
             )}
           </div>
