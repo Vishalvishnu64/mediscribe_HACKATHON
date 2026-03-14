@@ -11,6 +11,7 @@ const DoctorDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState(null);
   const [requests, setRequests] = useState([]);
+  const [chatRequests, setChatRequests] = useState([]);
   const [alerts, setAlerts] = useState([]);
   const [appointments, setAppointments] = useState([]);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -39,15 +40,17 @@ const DoctorDashboard = () => {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [statsRes, requestsRes, alertsRes, apptsRes] = await Promise.all([
+      const [statsRes, requestsRes, chatReqRes, alertsRes, apptsRes] = await Promise.all([
         axios.get('/doctor-panel/stats'),
         axios.get('/doctors/requests'),
+        axios.get('/chats/doctor/pending'),
         axios.get('/doctor-panel/alerts'),
         axios.get('/doctor-panel/appointments'),
       ]);
 
       setStats(statsRes.data || null);
       setRequests(requestsRes.data || []);
+      setChatRequests(chatReqRes.data || []);
       setAlerts((alertsRes.data || []).slice(0, 5));
       setAppointments((apptsRes.data || []).slice(0, 5));
     } catch (err) {
@@ -109,6 +112,22 @@ const DoctorDashboard = () => {
       setSelectedRequest(null);
     } catch (err) {
       console.error(err);
+    } finally {
+      setRequestBusy(false);
+    }
+  };
+
+  const handleChatRequestDecision = async (id, action) => {
+    try {
+      setRequestBusy(true);
+      await axios.patch(`/chats/requests/${id}/decision`, { action });
+      setChatRequests((prev) => prev.filter((r) => r._id !== id));
+      if (action === 'ACCEPT') {
+        navigate(`/doctor/chats/${id}`);
+      }
+    } catch (err) {
+      console.error(err);
+      alert(err?.response?.data?.error || 'Failed to process chat request');
     } finally {
       setRequestBusy(false);
     }
@@ -294,13 +313,42 @@ const DoctorDashboard = () => {
             <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl font-display font-bold text-slate-800">Pending Connection Requests</h2>
-                <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-slate-100 text-slate-600">{requests.length}</span>
+                <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-slate-100 text-slate-600">{requests.length + chatRequests.length}</span>
               </div>
 
-              {requests.length === 0 ? (
+              {requests.length === 0 && chatRequests.length === 0 ? (
                 <p className="text-sm text-slate-500">No pending requests.</p>
               ) : (
                 <div className="space-y-3">
+                  {chatRequests.map((req) => (
+                    <div
+                      key={`chat-${req._id}`}
+                      className="w-full text-left rounded-2xl border border-blue-200 bg-blue-50 p-4"
+                    >
+                      <p className="font-bold text-slate-800">{req.patientId?.name || 'Patient'}</p>
+                      <p className="text-xs text-slate-500 mt-0.5">Chat requested on {new Date(req.createdAt).toLocaleDateString()}</p>
+                      <p className="text-xs text-blue-700 font-bold mt-2">Chat request notification</p>
+                      <div className="mt-3 flex items-center gap-2">
+                        <button
+                          type="button"
+                          disabled={requestBusy}
+                          onClick={() => handleChatRequestDecision(req._id, 'ACCEPT')}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-bold disabled:opacity-60"
+                        >
+                          <CheckCircle2 size={13} /> Accept
+                        </button>
+                        <button
+                          type="button"
+                          disabled={requestBusy}
+                          onClick={() => handleChatRequestDecision(req._id, 'DENY')}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-rose-300 bg-rose-50 text-rose-700 text-xs font-bold disabled:opacity-60"
+                        >
+                          <XCircle size={13} /> Deny
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+
                   {requests.map((req) => (
                     <button
                       key={req._id}

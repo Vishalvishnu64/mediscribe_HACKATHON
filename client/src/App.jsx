@@ -20,6 +20,7 @@ import DoctorAlerts from './pages/doctor/DoctorAlerts';
 import DoctorAppointments from './pages/doctor/DoctorAppointments';
 import DoctorDataHub from './pages/doctor/DoctorDataHub';
 import DoctorSettings from './pages/doctor/DoctorSettings';
+import ChatRoom from './pages/shared/ChatRoom';
 import NomineeSubscribe from './pages/NomineeSubscribe';
 
 function App() {
@@ -42,6 +43,8 @@ function App() {
             <Route path="/patient/settings" element={<Settings />} />
             <Route path="/patient/doctors" element={<DoctorsDirectory />} />
             <Route path="/patient/doctors/:doctorId" element={<DoctorProfile />} />
+            <Route path="/patient/chats" element={<ChatRoom />} />
+            <Route path="/patient/chats/:chatId" element={<ChatRoom />} />
           </Route>
 
           {/* Doctor Routes */}
@@ -53,6 +56,8 @@ function App() {
             <Route path="/doctor/appointments" element={<DoctorAppointments />} />
             <Route path="/doctor/data-hub" element={<DoctorDataHub />} />
             <Route path="/doctor/settings" element={<DoctorSettings />} />
+            <Route path="/doctor/chats" element={<ChatRoom />} />
+            <Route path="/doctor/chats/:chatId" element={<ChatRoom />} />
           </Route>
         </Routes>
       </BrowserRouter>

@@ -11,6 +11,9 @@ const DoctorProfile = () => {
   const navigate = useNavigate();
   const [doctor, setDoctor] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [chatStatus, setChatStatus] = useState('NONE');
+  const [chatRequestId, setChatRequestId] = useState('');
+  const [chatBusy, setChatBusy] = useState(false);
 
   useEffect(() => {
     const fetchDoctor = async () => {
@@ -26,6 +29,35 @@ const DoctorProfile = () => {
 
     fetchDoctor();
   }, [doctorId]);
+
+  useEffect(() => {
+    const loadChatStatus = async () => {
+      try {
+        const res = await axios.get(`/chats/patient/doctor/${doctorId}/status`);
+        setChatStatus(res.data?.status || 'NONE');
+        setChatRequestId(res.data?.requestId || '');
+      } catch {
+        setChatStatus('NONE');
+        setChatRequestId('');
+      }
+    };
+
+    loadChatStatus();
+  }, [doctorId]);
+
+  const requestChat = async () => {
+    try {
+      setChatBusy(true);
+      await axios.post(`/chats/request/${doctorId}`);
+      const res = await axios.get(`/chats/patient/doctor/${doctorId}/status`);
+      setChatStatus(res.data?.status || 'PENDING');
+      setChatRequestId(res.data?.requestId || '');
+    } catch (err) {
+      alert(err?.response?.data?.error || 'Failed to send chat request');
+    } finally {
+      setChatBusy(false);
+    }
+  };
 
   useEffect(() => {
     if (!doctor) return;
@@ -97,6 +129,31 @@ const DoctorProfile = () => {
         >
           <ArrowLeft size={16} /> Back to doctor search
         </button>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {chatStatus === 'ACCEPTED' && chatRequestId ? (
+            <button
+              type="button"
+              onClick={() => navigate(`/patient/chats/${chatRequestId}`)}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-white font-bold"
+            >
+              Open Chat
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={requestChat}
+              disabled={chatBusy || chatStatus === 'PENDING'}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-primary/30 bg-primary/10 text-primary font-bold disabled:opacity-60"
+            >
+              {chatBusy ? 'Sending...' : chatStatus === 'PENDING' ? 'Chat Request Pending' : chatStatus === 'DENIED' ? 'Request Chat Again' : 'Request Chat'}
+            </button>
+          )}
+
+          {chatStatus === 'DENIED' && (
+            <span className="text-xs font-bold px-2 py-1 rounded-lg bg-rose-100 text-rose-700 border border-rose-200">Request denied by doctor</span>
+          )}
+        </div>
 
         <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm">
           <div className="flex flex-col lg:flex-row gap-6">

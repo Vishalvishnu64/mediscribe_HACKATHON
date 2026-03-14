@@ -13,6 +13,7 @@ import {
   Settings,
   Pill,
   Clock,
+  MessageCircle,
   LogOut
 } from 'lucide-react';
 
@@ -44,6 +45,7 @@ const Sidebar = () => {
     { to: '/patient/doctors', label: 'Doctors', icon: <Users size={20} /> },
     { to: '/patient/medications', label: 'Active Meds', icon: <Pill size={20} /> },
     { to: '/patient/reminders', label: 'Reminders', icon: <Clock size={20} /> },
+    { to: '/patient/chats', label: 'Chats', icon: <MessageCircle size={20} /> },
     { to: '/patient/history', label: 'Medical History', icon: <CalendarCheck size={20} /> },
     { to: '/patient/settings', label: 'Settings', icon: <Settings size={20} /> },
   ];
@@ -53,6 +55,7 @@ const Sidebar = () => {
     { to: '/doctor/patients', label: 'My Patients', icon: <Users size={20} /> },
     { to: '/doctor/alerts', label: 'Alerts', icon: <Bell size={20} /> },
     { to: '/doctor/appointments', label: 'Appointments', icon: <CalendarCheck size={20} /> },
+    { to: '/doctor/chats', label: 'Chats', icon: <MessageCircle size={20} /> },
     { to: '/doctor/data-hub', label: 'Data Hub', icon: <Database size={20} /> },
     { to: '/doctor/settings', label: 'Settings', icon: <Settings size={20} /> },
   ];
